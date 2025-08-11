@@ -15,7 +15,7 @@ async function testAuthFlow() {
     const loginResponse = await axios.post(
       "http://localhost:5001/api/auth/login",
       {
-        email: "admin@planner.com",
+        email: "arena@advpro.it",
         password: "password123",
       }
     );

@@ -9,18 +9,29 @@ async function fixAdminPassword() {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash("password123", saltRounds);
 
-    // Aggiorna la password dell'admin
+    // Aggiorna la password dell'admin esistente
     await db.none(
-      "UPDATE volontari SET password_hash = $1 WHERE email = 'admin@planner.com'",
+      "UPDATE volontari SET password_hash = $1 WHERE email = 'arena@advpro.it'",
       [passwordHash]
     );
 
     console.log("✅ Password admin aggiornata con successo!");
-    console.log("Credenziali: admin@planner.com / password123");
+    console.log("Credenziali: arena@advpro.it / password123");
+    
+    // Verifica che l'aggiornamento sia andato a buon fine
+    const admin = await db.oneOrNone(
+      "SELECT email, ruolo FROM volontari WHERE email = 'arena@advpro.it'"
+    );
+    
+    if (admin) {
+      console.log("✅ Admin trovato:", admin);
+    } else {
+      console.log("❌ Admin non trovato");
+    }
 
     process.exit(0);
   } catch (error) {
-    console.error("❌ Errore nell'aggiornamento della password:", error);
+    console.error("❌ Errore:", error);
     process.exit(1);
   }
 }

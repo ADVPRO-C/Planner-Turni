@@ -1,0 +1,29 @@
+[
+  {
+    "nome": "Mario",
+    "cognome": "Rossi",
+    "email": "mario.rossi@example.com",
+    "telefono": "123-456-7890",
+    "sesso": "M",
+    "stato": "attivo",
+    "ruolo": "volontario"
+  },
+  {
+    "nome": "Giulia",
+    "cognome": "Bianchi",
+    "email": "giulia.bianchi@example.com",
+    "telefono": "098-765-4321",
+    "sesso": "F",
+    "stato": "attivo",
+    "ruolo": "volontario"
+  },
+  {
+    "nome": "Luca",
+    "cognome": "Verdi",
+    "email": "luca.verdi@example.com",
+    "telefono": "",
+    "sesso": "M",
+    "stato": "non_attivo",
+    "ruolo": "admin"
+  }
+]

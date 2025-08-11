@@ -1,9 +1,53 @@
 const express = require("express");
 const Joi = require("joi");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const db = require("../config/database");
+const multer = require("multer");
+const csv = require("csv-parser");
+const { Readable } = require("stream");
 
 const router = express.Router();
+
+// Middleware per verificare il token JWT
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ message: "Token di accesso richiesto" });
+  }
+
+  jwt.verify(
+    token,
+    process.env.JWT_SECRET || "your-secret-key",
+    (err, user) => {
+      if (err) {
+        return res.status(403).json({ message: "Token non valido" });
+      }
+      req.user = user;
+      next();
+    }
+  );
+};
+
+// Configurazione multer per l'upload dei file
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/json' || 
+        file.mimetype === 'text/csv' || 
+        file.originalname.endsWith('.csv') || 
+        file.originalname.endsWith('.json')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Formato file non supportato. Utilizzare JSON o CSV.'));
+    }
+  }
+});
 
 // Schema di validazione per i volontari
 const volontarioSchema = Joi.object({
@@ -240,6 +284,187 @@ router.delete("/:id", async (req, res) => {
     res.json({ message: "Volontario eliminato con successo" });
   } catch (error) {
     console.error("Errore nell'eliminazione del volontario:", error);
+    res.status(500).json({ message: "Errore interno del server" });
+  }
+});
+
+// GET /api/volontari/export/:format - Esporta tutti i volontari
+router.get("/export/:format", authenticateToken, async (req, res) => {
+  try {
+    // Verifica che l'utente sia un amministratore
+    if (req.user.ruolo !== 'admin') {
+      return res.status(403).json({ message: "Accesso negato. Solo gli amministratori possono esportare i volontari." });
+    }
+
+    const { format } = req.params;
+    
+    if (!['json', 'csv'].includes(format)) {
+      return res.status(400).json({ message: "Formato non supportato. Utilizzare 'json' o 'csv'." });
+    }
+
+    // Recupera tutti i volontari (senza password)
+    const volontari = await db.any(`
+      SELECT id, nome, cognome, email, telefono, sesso, stato, ruolo, 
+             created_at, updated_at
+      FROM volontari 
+      ORDER BY cognome, nome
+    `);
+
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="volontari.json"');
+      res.json(volontari);
+    } else if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="volontari.csv"');
+      
+      // Intestazioni CSV
+      const headers = ['id', 'nome', 'cognome', 'email', 'telefono', 'sesso', 'stato', 'ruolo', 'created_at', 'updated_at'];
+      let csvContent = headers.join(',') + '\n';
+      
+      // Dati CSV
+      volontari.forEach(volontario => {
+        const row = headers.map(header => {
+          const value = volontario[header] || '';
+          // Escape delle virgolette e wrapping in virgolette se necessario
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+            return '"' + value.replace(/"/g, '""') + '"';
+          }
+          return value;
+        });
+        csvContent += row.join(',') + '\n';
+      });
+      
+      res.send(csvContent);
+    }
+  } catch (error) {
+    console.error("Errore nell'esportazione dei volontari:", error);
+    res.status(500).json({ message: "Errore interno del server" });
+  }
+});
+
+// POST /api/volontari/import - Importa volontari da file JSON o CSV
+router.post("/import", authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    // Verifica che l'utente sia un amministratore
+    if (req.user.ruolo !== 'admin') {
+      return res.status(403).json({ message: "Accesso negato. Solo gli amministratori possono importare i volontari." });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "Nessun file caricato" });
+    }
+
+    const fileContent = req.file.buffer.toString('utf8');
+    let volontariData = [];
+    
+    // Determina il formato del file
+    const isJson = req.file.originalname.endsWith('.json') || req.file.mimetype === 'application/json';
+    const isCsv = req.file.originalname.endsWith('.csv') || req.file.mimetype === 'text/csv';
+    
+    if (isJson) {
+      try {
+        volontariData = JSON.parse(fileContent);
+        if (!Array.isArray(volontariData)) {
+          return res.status(400).json({ message: "Il file JSON deve contenere un array di volontari" });
+        }
+      } catch (parseError) {
+        return res.status(400).json({ message: "Formato JSON non valido" });
+      }
+    } else if (isCsv) {
+      // Parse CSV
+      const results = [];
+      const stream = Readable.from([fileContent]);
+      
+      await new Promise((resolve, reject) => {
+        stream
+          .pipe(csv())
+          .on('data', (data) => results.push(data))
+          .on('end', resolve)
+          .on('error', reject);
+      });
+      
+      volontariData = results;
+    } else {
+      return res.status(400).json({ message: "Formato file non supportato" });
+    }
+
+    const importResults = {
+      success: 0,
+      errors: [],
+      skipped: 0
+    };
+
+    // Processa ogni volontario
+    for (let i = 0; i < volontariData.length; i++) {
+      const volontarioData = volontariData[i];
+      
+      try {
+        // Validazione dei dati
+        const { error, value } = volontarioSchema.validate({
+          nome: volontarioData.nome,
+          cognome: volontarioData.cognome,
+          email: volontarioData.email || null,
+          telefono: volontarioData.telefono || null,
+          sesso: volontarioData.sesso,
+          stato: volontarioData.stato || 'attivo',
+          ruolo: volontarioData.ruolo || 'volontario'
+        });
+
+        if (error) {
+          importResults.errors.push({
+            row: i + 1,
+            data: volontarioData,
+            error: error.details[0].message
+          });
+          continue;
+        }
+
+        const { nome, cognome, email, telefono, sesso, stato, ruolo } = value;
+
+        // Verifica se l'email esiste già
+        if (email) {
+          const existingVolontario = await db.oneOrNone(
+            "SELECT id FROM volontari WHERE email = $1",
+            [email]
+          );
+
+          if (existingVolontario) {
+            importResults.skipped++;
+            importResults.errors.push({
+              row: i + 1,
+              data: volontarioData,
+              error: "Email già esistente - volontario saltato"
+            });
+            continue;
+          }
+        }
+
+        // Inserisci il volontario
+        await db.one(
+          `INSERT INTO volontari (nome, cognome, email, telefono, sesso, stato, ruolo)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id`,
+          [nome, cognome, email, telefono, sesso, stato, ruolo]
+        );
+
+        importResults.success++;
+      } catch (dbError) {
+        importResults.errors.push({
+          row: i + 1,
+          data: volontarioData,
+          error: "Errore database: " + dbError.message
+        });
+      }
+    }
+
+    res.json({
+      message: `Importazione completata. ${importResults.success} volontari importati, ${importResults.skipped} saltati, ${importResults.errors.length} errori.`,
+      results: importResults
+    });
+
+  } catch (error) {
+    console.error("Errore nell'importazione dei volontari:", error);
     res.status(500).json({ message: "Errore interno del server" });
   }
 });

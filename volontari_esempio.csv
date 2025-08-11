@@ -1,0 +1,4 @@
+nome,cognome,email,telefono,sesso,stato,ruolo
+Anna,Neri,anna.neri@example.com,555-1234,F,attivo,volontario
+Paolo,Gialli,paolo.gialli@example.com,555-5678,M,attivo,volontario
+Sara,Blu,sara.blu@example.com,,F,non_attivo,admin

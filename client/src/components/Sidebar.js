@@ -108,7 +108,6 @@ const Sidebar = () => {
       subItems: [
         { label: "Gestione Turni", path: "/turni/gestione" },
         { label: "Turni Incompleti", path: "/turni/incompleti" },
-        { label: "Notifiche", path: "/turni/notifiche" },
       ],
     },
     {

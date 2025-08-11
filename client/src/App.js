@@ -16,6 +16,8 @@ import GestioneVolontari from "./pages/GestioneVolontari";
 import Disponibilita from "./pages/Disponibilita";
 import RiepilogoDisponibilita from "./pages/RiepilogoDisponibilita";
 import GestioneTurni from "./pages/GestioneTurni";
+import TurniIncompleti from "./pages/TurniIncompleti";
+import Notifiche from "./pages/Notifiche";
 import Cronologia from "./pages/Cronologia";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import "./index.css";
@@ -133,6 +135,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <GestioneTurni />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/turni/incompleti"
+              element={
+                <ProtectedRoute>
+                  <TurniIncompleti />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/notifiche"
+              element={
+                <ProtectedRoute>
+                  <Notifiche />
                 </ProtectedRoute>
               }
             />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import axios from "axios";
+import { api } from "../utils/api";
 import toast from "react-hot-toast";
 import {
   PlusIcon,
@@ -18,7 +19,10 @@ const GestioneVolontari = () => {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [editingVolontario, setEditingVolontario] = useState(null);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [formData, setFormData] = useState({
     nome: "",
     cognome: "",
@@ -291,6 +295,89 @@ const GestioneVolontari = () => {
     setShowModal(true);
   };
 
+  // Funzione per gestire l'export
+  const handleExport = async (format) => {
+    try {
+      const response = await api.get(`/volontari/export/${format}`, {
+        responseType: 'blob'
+      });
+      
+      const blob = new Blob([response.data], {
+        type: format === 'json' ? 'application/json' : 'text/csv'
+      });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `volontari.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success(`Volontari esportati in formato ${format.toUpperCase()}`);
+    } catch (error) {
+      console.error('Errore nell\'esportazione:', error);
+      toast.error('Errore nell\'esportazione dei volontari');
+    }
+  };
+
+  // Funzione per gestire l'importazione
+  const handleImport = async () => {
+    if (!importFile) {
+      toast.error('Seleziona un file da importare');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', importFile);
+
+    setImporting(true);
+    try {
+      const response = await api.post('/volontari/import', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      toast.success(response.data.message);
+      
+      // Mostra dettagli dell'importazione se ci sono errori
+      if (response.data.results && response.data.results.errors.length > 0) {
+        console.log('Errori di importazione:', response.data.results.errors);
+        toast.error(`${response.data.results.errors.length} errori durante l'importazione. Controlla la console per i dettagli.`);
+      }
+
+      setShowImportModal(false);
+      setImportFile(null);
+      fetchVolontari(); // Ricarica la lista
+    } catch (error) {
+      console.error('Errore nell\'importazione:', error);
+      toast.error(error.response?.data?.message || 'Errore nell\'importazione dei volontari');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Funzione per gestire la selezione del file
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const validTypes = ['application/json', 'text/csv'];
+      const validExtensions = ['.json', '.csv'];
+      
+      const isValidType = validTypes.includes(file.type) || 
+                         validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+      
+      if (isValidType) {
+        setImportFile(file);
+      } else {
+        toast.error('Formato file non supportato. Utilizzare JSON o CSV.');
+        event.target.value = '';
+      }
+    }
+  };
+
   // Calcola i volontari per la pagina corrente
   const startIndex = (pagination.page - 1) * pagination.limit;
   const endIndex = startIndex + pagination.limit;
@@ -347,13 +434,49 @@ const GestioneVolontari = () => {
               Crea, modifica ed elimina i proclamatori del sistema
             </p>
           </div>
-          <button
-            onClick={openCreateModal}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-          >
-            <PlusIcon className="h-4 w-4 mr-2" />
-            Nuovo Volontario
-          </button>
+          <div className="flex items-center space-x-3">
+            {/* Pulsanti Import/Export */}
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handleExport('json')}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                title="Esporta in JSON"
+              >
+                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                JSON
+              </button>
+              <button
+                onClick={() => handleExport('csv')}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                title="Esporta in CSV"
+              >
+                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                CSV
+              </button>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                title="Importa volontari"
+              >
+                <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+                Import
+              </button>
+            </div>
+            
+            <button
+              onClick={openCreateModal}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            >
+              <PlusIcon className="h-4 w-4 mr-2" />
+              Nuovo Volontario
+            </button>
+          </div>
         </div>
       </div>
 
@@ -813,6 +936,87 @@ const GestioneVolontari = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal per importazione */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Importa Volontari
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="form-label">Seleziona File</label>
+                  <input
+                    type="file"
+                    accept=".json,.csv"
+                    onChange={handleFileSelect}
+                    className="form-input py-2"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Formati supportati: JSON, CSV (max 5MB)
+                  </p>
+                </div>
+                
+                {importFile && (
+                  <div className="bg-gray-50 p-3 rounded-md">
+                    <p className="text-sm text-gray-700">
+                      <strong>File selezionato:</strong> {importFile.name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Dimensione: {(importFile.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                )}
+
+                <div className="bg-blue-50 p-3 rounded-md">
+                  <h4 className="text-sm font-medium text-blue-800 mb-2">
+                    Formato richiesto:
+                  </h4>
+                  <div className="text-xs text-blue-700 space-y-1">
+                    <p><strong>JSON:</strong> Array di oggetti con campi: nome, cognome, email, telefono, sesso, stato, ruolo</p>
+                    <p><strong>CSV:</strong> Intestazioni: nome,cognome,email,telefono,sesso,stato,ruolo</p>
+                    <p><strong>Campi obbligatori:</strong> nome, cognome, sesso</p>
+                    <p><strong>Valori sesso:</strong> M o F</p>
+                    <p><strong>Valori stato:</strong> attivo o non_attivo</p>
+                    <p><strong>Valori ruolo:</strong> volontario o admin</p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowImportModal(false);
+                      setImportFile(null);
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+                    disabled={importing}
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleImport}
+                    disabled={!importFile || importing}
+                    className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {importing ? (
+                      <div className="flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Importando...
+                      </div>
+                    ) : (
+                      'Importa'
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
