@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
+import toast from "react-hot-toast";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -24,6 +25,14 @@ const Login = () => {
 
     const result = await login(email, password);
     if (result.success) {
+      // Toast di benvenuto dopo login riuscito
+      setTimeout(() => {
+        toast.success(`Benvenuto, ${result.user?.nome || "Utente"}!`, {
+          duration: 3000,
+          icon: "👋",
+        });
+      }, 500); // Piccolo delay per permettere la navigazione
+
       navigate("/");
     }
 

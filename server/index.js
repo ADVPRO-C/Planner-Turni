@@ -10,6 +10,7 @@ const volontariRoutes = require("./routes/volontari");
 const disponibilitaRoutes = require("./routes/disponibilita");
 const turniRoutes = require("./routes/turni");
 const cronologiaRoutes = require("./routes/cronologia");
+const assistenzaRoutes = require("./routes/assistenza");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -43,6 +44,8 @@ app.use("/api/turni", turniRoutes);
 console.log("✓ Route turni caricate");
 app.use("/api/cronologia", cronologiaRoutes);
 console.log("✓ Route cronologia caricate");
+app.use("/api/assistenza", assistenzaRoutes);
+console.log("✓ Route assistenza caricate");
 
 // Route di test
 app.get("/api/health", (req, res) => {

@@ -19,6 +19,8 @@ import GestioneTurni from "./pages/GestioneTurni";
 import TurniIncompleti from "./pages/TurniIncompleti";
 import Notifiche from "./pages/Notifiche";
 import Cronologia from "./pages/Cronologia";
+import Assistenza from "./pages/Assistenza";
+import Impostazioni from "./pages/Impostazioni";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import "./index.css";
 
@@ -159,6 +161,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Cronologia />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/assistenza"
+              element={
+                <ProtectedRoute>
+                  <Assistenza />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/impostazioni"
+              element={
+                <ProtectedRoute>
+                  <Impostazioni />
                 </ProtectedRoute>
               }
             />

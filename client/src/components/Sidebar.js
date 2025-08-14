@@ -123,6 +123,10 @@ const Sidebar = () => {
       icon: CogIcon,
       path: "/impostazioni",
       adminOnly: true,
+      subItems: [
+        { label: "Configurazione", path: "/impostazioni" },
+        { label: "Assistenza", path: "/assistenza" },
+      ],
     },
   ];
 

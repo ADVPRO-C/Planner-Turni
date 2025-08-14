@@ -26,6 +26,8 @@ planner_turni/
 # Logs
 logs
 *.log
+server/logs/
+server/uploads/
 
 # Runtime data
 pids

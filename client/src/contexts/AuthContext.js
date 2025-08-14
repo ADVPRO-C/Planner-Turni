@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
 
       toast.success("Accesso effettuato con successo!");
-      return { success: true };
+      return { success: true, user };
     } catch (error) {
       const message =
         error.response?.data?.message || "Errore durante l'accesso";
