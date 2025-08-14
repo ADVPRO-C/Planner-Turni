@@ -53,7 +53,7 @@ const Login = () => {
             Accedi al tuo account
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Sistema di gestione turni per Testimoni di Geova
+            Inserisci le tue credenziali per accedere al sistema.
           </p>
         </div>
 
