@@ -12,6 +12,8 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   DocumentArrowDownIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 
 const Autocompilazione = () => {
@@ -69,6 +71,35 @@ const Autocompilazione = () => {
   // Stati per gestione draft locale
   const [pendingAssignments, setPendingAssignments] = useState(new Map()); // Modifiche in sospeso
   const [pendingRemovals, setPendingRemovals] = useState(new Map()); // Rimozioni in sospeso
+  const [manuallyEmptiedSlots, setManuallyEmptiedSlots] = useState(new Set()); // Slot lasciati vuoti manualmente dall'utente (formato: "date-slotId-postazioneId")
+  
+  // Stato per tooltip nomi troncati
+  const [tooltip, setTooltip] = useState({ show: false, text: "", x: 0, y: 0 });
+  
+  // Carica gli slot lasciati vuoti manualmente dal localStorage
+  const loadManuallyEmptiedSlots = (year, month) => {
+    try {
+      const stored = localStorage.getItem(`manuallyEmptiedSlots_${year}_${month}`);
+      if (stored) {
+        return new Set(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error("Errore nel caricamento degli slot lasciati vuoti:", error);
+    }
+    return new Set();
+  };
+  
+  // Salva gli slot lasciati vuoti manualmente nel localStorage
+  const saveManuallyEmptiedSlots = (slots, year, month) => {
+    try {
+      localStorage.setItem(
+        `manuallyEmptiedSlots_${year}_${month}`,
+        JSON.stringify(Array.from(slots))
+      );
+    } catch (error) {
+      console.error("Errore nel salvataggio degli slot lasciati vuoti:", error);
+    }
+  };
 
   // Stati per export
   const [exporting, setExporting] = useState(false);
@@ -152,6 +183,9 @@ const Autocompilazione = () => {
   useEffect(() => {
     loadGestioneData();
     loadContatoriMensili();
+    // Carica gli slot lasciati vuoti manualmente per il mese corrente
+    const slotsForMonth = loadManuallyEmptiedSlots(selectedMonth.year, selectedMonth.month);
+    setManuallyEmptiedSlots(slotsForMonth);
   }, [selectedDateRange]); // Ricarica i dati quando cambia il range di date
 
   // Funzioni di utilità
@@ -340,21 +374,26 @@ const Autocompilazione = () => {
     // Calcola le rimozioni in sospeso per questo volontario nel mese corrente
     let rimozioniInSospeso = 0;
     
-    pendingRemovals.forEach((volontarioIdRemoved, assegnazioneId) => {
-      if (volontarioIdRemoved === parseInt(volontarioId)) {
-        // Trova l'assegnazione corrispondente per verificare la data
-        const assegnazione = data?.assegnazioni?.find(a => a.assegnazione_id === assegnazioneId);
-        if (assegnazione) {
-          let assegnazioneDate;
-          if (typeof assegnazione.data_turno === "string") {
-            assegnazioneDate = assegnazione.data_turno.split("T")[0];
-          } else {
-            assegnazioneDate = assegnazione.data_turno.toISOString().split("T")[0];
-          }
-          
-          if (assegnazioneDate >= selectedDateRange.inizio && assegnazioneDate <= selectedDateRange.fine) {
-            rimozioniInSospeso++;
-          }
+    pendingRemovals.forEach((volontariSet, assegnazioneId) => {
+      if (!volontariSet || volontariSet.size === 0) return;
+      if (!volontariSet.has(parseInt(volontarioId))) return;
+
+      const assegnazione = data?.assegnazioni?.find(
+        (a) => a.assegnazione_id === parseInt(assegnazioneId, 10)
+      );
+      if (assegnazione) {
+        let assegnazioneDate;
+        if (typeof assegnazione.data_turno === "string") {
+          assegnazioneDate = assegnazione.data_turno.split("T")[0];
+        } else {
+          assegnazioneDate = assegnazione.data_turno.toISOString().split("T")[0];
+        }
+
+        if (
+          assegnazioneDate >= selectedDateRange.inizio &&
+          assegnazioneDate <= selectedDateRange.fine
+        ) {
+          rimozioniInSospeso++;
         }
       }
     });
@@ -389,13 +428,99 @@ const Autocompilazione = () => {
 
     // Rimuovi le assegnazioni che sono state rimosse in sospeso
     assignments = assignments.filter((a) => {
-      const isRemoved =
-        pendingRemovals.has(a.assegnazione_id) &&
-        pendingRemovals.get(a.assegnazione_id) === a.volontario_id;
-      return !isRemoved;
+      const removedSet = pendingRemovals.get(String(a.assegnazione_id));
+      return !(removedSet && removedSet.has(a.volontario_id));
     });
 
     return assignments;
+  };
+
+  // Verifica se una postazione è completamente assegnata per il mese corrente
+  const isPostazioneComplete = (postazione) => {
+    if (!data?.dateRange || !postazione.slot_orari) {
+      return false;
+    }
+
+    for (const date of data.dateRange) {
+      // Verifica solo le date in cui la postazione è attiva
+      if (!isPostazioneActiveForDate(postazione, date)) {
+        continue;
+      }
+
+      for (const slot of postazione.slot_orari) {
+        const existingAssignments = getExistingAssignments(
+          date,
+          slot.id,
+          postazione.id
+        );
+
+        const key = `${date}-${slot.id}-${postazione.id}`;
+        const pendingAssignmentsForSlot = pendingAssignments.get(key) || [];
+
+        // Filtra le assegnazioni pending che sono state rimosse
+        const validPendingAssignments = pendingAssignmentsForSlot.filter((pending) => {
+          for (const [assegnazioneId, volontariSet] of pendingRemovals) {
+            if (!volontariSet || volontariSet.size === 0) continue;
+            const matchingExisting = existingAssignments.find(
+              (a) =>
+                a.assegnazione_id === parseInt(assegnazioneId, 10) &&
+                a.volontario_id === pending.volontario_id
+            );
+            if (matchingExisting && volontariSet.has(pending.volontario_id)) {
+              return false;
+            }
+          }
+          return true;
+        });
+
+        // Conta le assegnazioni totali (esistenti + pending valide)
+        const totalAssignments =
+          existingAssignments.length + validPendingAssignments.length;
+
+        const maxProclamatori = postazione.max_proclamatori || 3;
+
+        // Se lo slot è lasciato vuoto manualmente, non conta come incompleto
+        if (manuallyEmptiedSlots.has(key)) {
+          continue;
+        }
+
+        // Se uno slot non è completamente assegnato, la postazione non è completa
+        if (totalAssignments < maxProclamatori) {
+          return false;
+        }
+      }
+    }
+
+    // Tutti gli slot sono completi
+    return true;
+  };
+
+  // Verifica se c'è almeno un uomo nelle assegnazioni (esistenti + pending)
+  const hasManInSlot = (date, slotOrarioId, postazioneId) => {
+    // Controlla nelle assegnazioni esistenti
+    const existingAssignments = getExistingAssignments(date, slotOrarioId, postazioneId);
+    const hasManInExisting = existingAssignments.some((a) => a.sesso === "M");
+
+    if (hasManInExisting) return true;
+
+    // Controlla nelle assegnazioni pending
+    const key = `${date}-${slotOrarioId}-${postazioneId}`;
+    const pendingAssignmentsForSlot = pendingAssignments.get(key) || [];
+
+    for (const pending of pendingAssignmentsForSlot) {
+      // Cerca il sesso del volontario nelle disponibilità
+      const volunteerData = data?.disponibilita?.find(
+        (d) =>
+          d.volontario_id === pending.volontario_id &&
+          d.data === date &&
+          d.slot_orario_id === slotOrarioId
+      );
+      if (volunteerData && volunteerData.sesso === "M") {
+        return true;
+      }
+    }
+
+    return false;
   };
 
   // Gestisce l'assegnazione manuale di un volontario (salva localmente)
@@ -497,6 +622,16 @@ const Autocompilazione = () => {
     });
 
     setPendingAssignments(newPendingAssignments);
+    
+    // Se questo slot era stato marcato come "lasciato vuoto manualmente",
+    // rimuovilo dal Set perché ora l'utente sta aggiungendo volontari
+    if (manuallyEmptiedSlots.has(key)) {
+      const newManuallyEmptiedSlots = new Set(manuallyEmptiedSlots);
+      newManuallyEmptiedSlots.delete(key);
+      setManuallyEmptiedSlots(newManuallyEmptiedSlots);
+      saveManuallyEmptiedSlots(newManuallyEmptiedSlots, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
+      console.log(`🗑️ Slot ${key} rimosso da manuallyEmptiedSlots (volontario aggiunto manualmente)`);
+    }
 
     // Forza un re-render immediato per mostrare il feedback visivo
     setTimeout(() => {
@@ -544,8 +679,31 @@ const Autocompilazione = () => {
     } else {
       // Se è un'assegnazione esistente, aggiungila alle rimozioni in sospeso
       const newPendingRemovals = new Map(pendingRemovals);
-      newPendingRemovals.set(assegnazioneId, volontarioId);
+      const currentSet =
+        newPendingRemovals.get(String(assegnazioneId)) || new Set();
+      const updatedSet = new Set(currentSet);
+      updatedSet.add(parseInt(volontarioId, 10));
+      newPendingRemovals.set(String(assegnazioneId), updatedSet);
       setPendingRemovals(newPendingRemovals);
+      
+      // Marca questo slot come "lasciato vuoto manualmente" per evitare che l'autocompilazione lo riempia
+      // Trova la chiave dello slot basandosi sull'assegnazione
+      const assignment = data?.assegnazioni?.find(a => a.id === parseInt(assegnazioneId));
+      if (assignment) {
+        let assignmentDate;
+        if (typeof assignment.data_turno === "string") {
+          assignmentDate = assignment.data_turno.split("T")[0];
+        } else {
+          assignmentDate = assignment.data_turno.toISOString().split("T")[0];
+        }
+        const slotKey = `${assignmentDate}-${assignment.slot_orario_id}-${assignment.postazione_id}`;
+        const newManuallyEmptiedSlots = new Set(manuallyEmptiedSlots);
+        newManuallyEmptiedSlots.add(slotKey);
+        setManuallyEmptiedSlots(newManuallyEmptiedSlots);
+        saveManuallyEmptiedSlots(newManuallyEmptiedSlots, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
+        console.log(`🏷️ Slot ${slotKey} marcato come lasciato vuoto manualmente`);
+      }
+      
       console.log(
         "✅ Aggiunta rimozione in sospeso per assegnazione:",
         assegnazioneId
@@ -562,38 +720,69 @@ const Autocompilazione = () => {
       console.log("🗑️ Rimozioni in sospeso:", pendingRemovals);
 
       // Prima rimuovi le rimozioni in sospeso
-      for (const [assegnazioneId, volontarioId] of pendingRemovals) {
-        console.log(
-          `🗑️ Rimuovendo volontario ${volontarioId} da assegnazione ${assegnazioneId}`
-        );
-
-        const response = await fetch(
-          `/api/turni/assegnazione/${assegnazioneId}/volontario/${volontarioId}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-          }
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error("❌ Errore rimozione:", response.status, errorData);
-          // Non bloccare il processo se una rimozione fallisce
-          console.warn(
-            `⚠️ Rimozione fallita per ${assegnazioneId}/${volontarioId}, continuando...`
+      for (const [assegnazioneId, volontariSet] of pendingRemovals) {
+        for (const volontarioId of volontariSet) {
+          console.log(
+            `🗑️ Rimuovendo volontario ${volontarioId} da assegnazione ${assegnazioneId}`
           );
-        } else {
-          console.log(`✅ Volontario ${volontarioId} rimosso con successo`);
+
+          try {
+            const assegnazioneIdNum = parseInt(assegnazioneId, 10);
+            const volontarioIdNum = parseInt(volontarioId, 10);
+
+            if (
+              Number.isNaN(assegnazioneIdNum) ||
+              Number.isNaN(volontarioIdNum)
+            ) {
+              console.error(
+                `❌ ID non validi: assegnazioneId=${assegnazioneId}, volontarioId=${volontarioId}`
+              );
+              continue;
+            }
+
+            await api.delete(
+              `/turni/assegnazione/${assegnazioneIdNum}/volontario/${volontarioIdNum}`
+            );
+            console.log(`✅ Volontario ${volontarioIdNum} rimosso con successo`);
+          } catch (error) {
+            console.error("❌ Errore rimozione:", {
+              error: error.message,
+              response: error.response?.data,
+              status: error.response?.status,
+              assegnazioneId,
+              volontarioId,
+            });
+            console.warn(
+              `⚠️ Rimozione fallita per ${assegnazioneId}/${volontarioId}, continuando...`
+            );
+          }
         }
       }
 
       // Poi aggiungi le nuove assegnazioni
+      // Traccia i volontari già processati per evitare duplicati nello stesso slot
+      const processedVolunteers = new Map(); // key -> Set(volontario_id)
+
       for (const [key, assignments] of pendingAssignments) {
         console.log(`📝 Processando assegnazioni per ${key}:`, assignments);
 
+        // Inizializza il set per questo slot se non esiste
+        if (!processedVolunteers.has(key)) {
+          processedVolunteers.set(key, new Set());
+        }
+        const processedForSlot = processedVolunteers.get(key);
+
         for (const assignment of assignments) {
+          const volontarioId = parseInt(assignment.volontario_id);
+          
+          // Verifica se questo volontario è già stato processato per questo slot
+          if (processedForSlot.has(volontarioId)) {
+            console.warn(
+              `⚠️ Volontario ${volontarioId} già in coda per questo slot, saltando...`
+            );
+            continue;
+          }
+          
           // Verifica se il volontario è già assegnato nel database
           const existingAssignments = getExistingAssignments(
             assignment.data_turno,
@@ -602,56 +791,70 @@ const Autocompilazione = () => {
           );
 
           const isAlreadyAssigned = existingAssignments.some(
-            (a) => a.volontario_id === parseInt(assignment.volontario_id)
+            (a) => a.volontario_id === volontarioId
           );
 
           if (isAlreadyAssigned) {
             console.warn(
-              `⚠️ Volontario ${assignment.volontario_id} già assegnato, saltando...`
+              `⚠️ Volontario ${volontarioId} già assegnato nel database, saltando...`
             );
+            processedForSlot.add(volontarioId);
             continue; // Salta questa assegnazione
           }
 
+          // Assicurati che la data sia in formato ISO string
+          let dataTurno = assignment.data_turno;
+          if (dataTurno instanceof Date) {
+            dataTurno = dataTurno.toISOString().split("T")[0];
+          } else if (typeof dataTurno === "string" && dataTurno.includes("T")) {
+            dataTurno = dataTurno.split("T")[0];
+          }
+
           const requestBody = {
-            data_turno: assignment.data_turno,
+            data_turno: dataTurno,
             slot_orario_id: parseInt(assignment.slot_orario_id),
             postazione_id: parseInt(assignment.postazione_id),
-            volontario_id: parseInt(assignment.volontario_id),
+            volontario_id: volontarioId,
           };
 
           console.log("📤 Invio richiesta assegnazione:", requestBody);
-          console.log("🔍 Dati assegnazione:", {
+          console.log("🔍 Dati assegnazione originali:", {
             data_turno: assignment.data_turno,
             slot_orario_id: assignment.slot_orario_id,
             postazione_id: assignment.postazione_id,
-            volontario_id: assignment.volontario_id,
+            volontario_id: volontarioId,
           });
 
-          const response = await fetch("/api/turni/assegna", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-            body: JSON.stringify(requestBody),
-          });
+          try {
+            const response = await api.post("/turni/assegna", requestBody);
 
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error("❌ Errore risposta:", response.status, errorData);
-            throw new Error(
-              `Errore nell'assegnazione del volontario: ${
-                errorData.message || response.statusText
-              }`
-            );
-          } else {
+            if (!response || !response.data) {
+              throw new Error("Risposta non valida dal server");
+            }
+            
             console.log(
-              `✅ Volontario ${assignment.volontario_id} assegnato con successo`
+              `✅ Volontario ${volontarioId} assegnato con successo`
             );
+            
+            // Segna come processato per evitare duplicati
+            processedForSlot.add(volontarioId);
+          } catch (error) {
+            console.error(`❌ Errore assegnazione volontario ${volontarioId}:`, {
+              error: error.message,
+              response: error.response?.data,
+              status: error.response?.status,
+              requestBody,
+            });
+            // Non bloccare il processo, ma logga l'errore
+            throw error; // Rilancia per fermare il salvataggio se c'è un errore critico
           }
         }
       }
 
+      // Salva gli slot lasciati vuoti manualmente PRIMA di pulire pendingRemovals
+      // così possiamo mantenerli dopo il salvataggio
+      const slotsToKeepAsEmpty = new Set(manuallyEmptiedSlots);
+      
       // Pulisci le modifiche in sospeso
       setPendingAssignments(new Map());
       setPendingRemovals(new Map());
@@ -659,11 +862,22 @@ const Autocompilazione = () => {
       // Ricarica i dati per aggiornare la visualizzazione
       await loadGestioneData();
       await loadContatoriMensili();
+      
+      // Ripristina gli slot lasciati vuoti manualmente dopo il ricaricamento
+      // così l'autocompilazione continuerà a rispettarli
+      setManuallyEmptiedSlots(slotsToKeepAsEmpty);
+      saveManuallyEmptiedSlots(slotsToKeepAsEmpty, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
 
       toast.success("Modifiche salvate con successo");
     } catch (error) {
-      console.error("Errore nel salvataggio:", error);
-      toast.error("Errore nel salvataggio delle modifiche");
+      console.error("Errore nel salvataggio:", {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        stack: error.stack,
+      });
+      const errorMessage = error.response?.data?.message || error.message || "Errore nel salvataggio delle modifiche";
+      toast.error(errorMessage);
     }
   };
 
@@ -727,13 +941,10 @@ const Autocompilazione = () => {
         postazioneNome || "tutte le postazioni"
       );
 
-      // Prima pulisci le assegnazioni in sospeso esistenti
-      setPendingAssignments(new Map());
-      setPendingRemovals(new Map());
-
-      // Simula l'autocompilazione creando assegnazioni in sospeso
-      const newPendingAssignments = new Map();
-      let totalAssignments = 0;
+      // NON pulire le assegnazioni in sospeso esistenti - preserviamo quelle già fatte
+      // Inizia con le assegnazioni in sospeso esistenti
+      const newPendingAssignments = new Map(pendingAssignments);
+      let totalNewAssignments = 0;
       let errors = [];
 
       data?.postazioni?.forEach((postazione) => {
@@ -751,7 +962,89 @@ const Autocompilazione = () => {
                 slot.id,
                 postazione.id
               );
+              
+              // Ottieni anche le assegnazioni in sospeso per questo slot
+              const key = `${date}-${slot.id}-${postazione.id}`;
+              const existingPendingForSlot = newPendingAssignments.get(key) || [];
+              
+              // IMPORTANTE: Verifica se questo slot è stato lasciato vuoto manualmente dall'utente
+              const slotKey = `${date}-${slot.id}-${postazione.id}`;
+              if (manuallyEmptiedSlots.has(slotKey)) {
+                console.log(
+                  `⏭️ Slot ${slotKey} è stato lasciato vuoto manualmente dall'utente, salto (non autocompilare)`
+                );
+                return;
+              }
+
+              // IMPORTANTE: Verifica se ci sono rimozioni in sospeso per questo slot
+              // Se ci sono rimozioni, NON autocompilare questo slot (l'utente ha voluto lasciarlo libero)
+              const hasPendingRemovals = Array.from(pendingRemovals.entries()).some(
+                ([assegnazioneId, volontariSet]) => {
+                  if (!volontariSet || volontariSet.size === 0) {
+                    return false;
+                  }
+
+                  const removedAssignment = existingAssignments.find(
+                    (a) =>
+                      a.assegnazione_id === parseInt(assegnazioneId, 10) &&
+                      volontariSet.has(a.volontario_id)
+                  );
+                  if (removedAssignment) {
+                    return true;
+                  }
+
+                  const assignmentForSlot = data?.assegnazioni?.find((a) => {
+                    let assegnazioneDate;
+                    if (typeof a.data_turno === "string") {
+                      assegnazioneDate = a.data_turno.split("T")[0];
+                    } else {
+                      assegnazioneDate = a.data_turno
+                        .toISOString()
+                        .split("T")[0];
+                    }
+                    return (
+                      parseInt(a.id) === parseInt(assegnazioneId, 10) &&
+                      assegnazioneDate === date &&
+                      a.slot_orario_id === slot.id &&
+                      a.postazione_id === postazione.id &&
+                      Array.from(volontariSet).includes(a.volontario_id)
+                    );
+                  });
+                  return assignmentForSlot !== undefined;
+                }
+              );
+
+              // Se ci sono rimozioni in sospeso per questo slot, NON autocompilare
+              // L'utente ha voluto lasciare questo slot libero
+              if (hasPendingRemovals) {
+                // Marca anche questo slot come lasciato vuoto manualmente
+                const newManuallyEmptiedSlots = new Set(manuallyEmptiedSlots);
+                newManuallyEmptiedSlots.add(slotKey);
+                setManuallyEmptiedSlots(newManuallyEmptiedSlots);
+                saveManuallyEmptiedSlots(newManuallyEmptiedSlots, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
+                console.log(
+                  `⏭️ Slot con rimozioni in sospeso per ${date} ${slot.orario_inizio}-${slot.orario_fine} - ${postazione.luogo}, salto (l'utente ha voluto lasciarlo libero)`
+                );
+                return;
+              }
+              
+              // Combina assegnazioni esistenti e pending per calcolare il totale
+              const allAssignedVolunteerIds = new Set([
+                ...existingAssignments.map((a) => a.volontario_id),
+                ...existingPendingForSlot.map((a) => parseInt(a.volontario_id)),
+              ]);
+              
               const maxProclamatori = postazione.max_proclamatori || 3;
+              const totalAssigned = allAssignedVolunteerIds.size;
+              
+              // Se lo slot è già completo, salta (NON toccare le assegnazioni esistenti)
+              if (totalAssigned >= maxProclamatori) {
+                console.log(
+                  `⏭️ Slot già completo (${totalAssigned}/${maxProclamatori}), salto`
+                );
+                return;
+              }
+              
               const availableVolunteers = getAvailableVolunteers(
                 date,
                 slot.orario_inizio,
@@ -763,6 +1056,8 @@ const Autocompilazione = () => {
                 `📅 ${date} ${slot.orario_inizio}-${slot.orario_fine}:`,
                 {
                   existingAssignments: existingAssignments.length,
+                  existingPending: existingPendingForSlot.length,
+                  totalAssigned,
                   maxProclamatori,
                   availableVolunteers: availableVolunteers.length,
                   volunteers: availableVolunteers.map(
@@ -771,18 +1066,13 @@ const Autocompilazione = () => {
                 }
               );
 
-              // Se il turno non è completo, cerca di assegnare volontari
-              if (existingAssignments.length < maxProclamatori) {
-                const volunteersNeeded =
-                  maxProclamatori - existingAssignments.length;
-                const assignedVolunteers = new Set(
-                  existingAssignments.map((a) => a.volontario_id)
-                );
+              // Calcola quanti volontari servono ancora (considerando anche pending)
+              const volunteersNeeded = maxProclamatori - totalAssigned;
 
-                // Filtra volontari già assegnati e disponibili
-                const availableForAssignment = availableVolunteers.filter(
-                  (v) => !assignedVolunteers.has(v.volontario_id)
-                );
+              // Filtra volontari già assegnati (esistenti + pending) e disponibili
+              const availableForAssignment = availableVolunteers.filter(
+                (v) => !allAssignedVolunteerIds.has(v.volontario_id)
+              );
 
                 console.log(`🎯 Volontari da assegnare: ${volunteersNeeded}`, {
                   availableForAssignment: availableForAssignment.map(
@@ -883,22 +1173,26 @@ const Autocompilazione = () => {
                 }
 
                 if (volunteersToAssign.length > 0) {
-                  const key = `${date}-${slot.id}-${postazione.id}`;
-                  const assignments = volunteersToAssign.map((volunteer) => ({
+                  // Aggiungi le nuove assegnazioni a quelle già esistenti per questo slot
+                  const existingPendingForThisSlot = newPendingAssignments.get(key) || [];
+                  const newAssignments = volunteersToAssign.map((volunteer) => ({
                     volontario_id: parseInt(volunteer.volontario_id),
                     data_turno: date,
                     slot_orario_id: slot.id,
                     postazione_id: postazione.id,
                   }));
 
+                  // Combina le nuove assegnazioni con quelle già in sospeso per questo slot
+                  const combinedAssignments = [...existingPendingForThisSlot, ...newAssignments];
+                  
                   console.log(
-                    `✅ Assegnazioni create:`,
-                    assignments.map((a) => a.volontario_id)
+                    `✅ Aggiunte ${newAssignments.length} nuove assegnazioni a slot (totale pending per questo slot: ${combinedAssignments.length}):`,
+                    newAssignments.map((a) => a.volontario_id)
                   );
-                  newPendingAssignments.set(key, assignments);
-                  totalAssignments += assignments.length;
+                  
+                  newPendingAssignments.set(key, combinedAssignments);
+                  totalNewAssignments += newAssignments.length;
                 }
-              }
             } catch (error) {
               const errorMsg = `Errore nell'elaborazione di ${date} ${slot.orario_inizio}-${slot.orario_fine}: ${error.message}`;
               console.error(errorMsg);
@@ -908,18 +1202,18 @@ const Autocompilazione = () => {
         });
       });
 
-      // Aggiorna le assegnazioni in sospeso
+      // Aggiorna le assegnazioni in sospeso (mantenendo quelle esistenti)
       setPendingAssignments(newPendingAssignments);
 
       const successMessage = isSpecificAutocompilazione
         ? `Autocompilazione completata per "${postazioneNome}" nel mese ${getMonthName(
             selectedMonth.year,
             selectedMonth.month
-          )}: ${totalAssignments} assegnazioni in sospeso`
+          )}: ${totalNewAssignments} nuove assegnazioni aggiunte`
         : `Autocompilazione completata per ${getMonthName(
             selectedMonth.year,
             selectedMonth.month
-          )}: ${totalAssignments} assegnazioni in sospeso`;
+          )}: ${totalNewAssignments} nuove assegnazioni aggiunte`;
 
       toast.success(successMessage);
 
@@ -938,10 +1232,15 @@ const Autocompilazione = () => {
         );
       }
 
-      if (totalAssignments > 0) {
+      if (totalNewAssignments > 0) {
         toast("Clicca 'Salva Modifiche' per confermare le assegnazioni", {
           icon: "💾",
           duration: 4000,
+        });
+      } else {
+        toast("Nessuna nuova assegnazione necessaria. Tutti gli slot vuoti/incompleti sono stati completati.", {
+          icon: "✅",
+          duration: 3000,
         });
       }
     } catch (error) {
@@ -969,42 +1268,36 @@ const Autocompilazione = () => {
       return;
     }
 
-    setCompiling(true);
+      setCompiling(true);
     try {
-      const response = await fetch("/api/turni/reset", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({
-          data_inizio: selectedDateRange.inizio,
-          data_fine: selectedDateRange.fine,
-          postazione_id: postazioneId, // Aggiunto parametro per postazione specifica
-        }),
+      const result = await api.post("/turni/reset", {
+        data_inizio: selectedDateRange.inizio,
+        data_fine: selectedDateRange.fine,
+        postazione_id: postazioneId, // Aggiunto parametro per postazione specifica
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        const successMessage = isSpecificReset
-          ? `Reset completato per "${postazioneNome}" nel mese ${getMonthName(
-              selectedMonth.year,
-              selectedMonth.month
-            )}: ${result.assegnazioni_eliminate} assegnazioni eliminate`
-          : `Reset completato per ${getMonthName(
-              selectedMonth.year,
-              selectedMonth.month
-            )}: ${result.assegnazioni_eliminate} assegnazioni eliminate`;
+      const resultData = result?.data || result;
+      const successMessage = isSpecificReset
+        ? `Reset completato per "${postazioneNome}" nel mese ${getMonthName(
+            selectedMonth.year,
+            selectedMonth.month
+          )}: ${resultData.assegnazioni_eliminate || 0} assegnazioni eliminate`
+        : `Reset completato per ${getMonthName(
+            selectedMonth.year,
+            selectedMonth.month
+          )}: ${resultData.assegnazioni_eliminate || 0} assegnazioni eliminate`;
 
-        toast.success(successMessage);
-        loadGestioneData(); // Ricarica i dati
-      } else {
-        const error = await response.json();
-        toast.error(error.message || "Errore nel reset");
-      }
+      toast.success(successMessage);
+      await loadGestioneData(); // Ricarica i dati
+      // Pulisci anche le assegnazioni in sospeso e gli slot lasciati vuoti dopo il reset
+      setPendingAssignments(new Map());
+      setPendingRemovals(new Map());
+      const emptySlots = new Set();
+      setManuallyEmptiedSlots(emptySlots);
+      saveManuallyEmptiedSlots(emptySlots, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
     } catch (error) {
       console.error("Errore:", error);
-      toast.error("Errore di connessione");
+      toast.error(error.response?.data?.message || error.message || "Errore di connessione");
     } finally {
       setCompiling(false);
     }
@@ -1393,6 +1686,30 @@ const Autocompilazione = () => {
     closeExportModal();
   };
 
+  // Gestisce il tooltip al hover
+  const handleMouseEnter = (e, fullName) => {
+    setTooltip({
+      show: true,
+      text: fullName,
+      x: e.clientX,
+      y: e.clientY - 10, // Mostra sopra il cursore
+    });
+  };
+
+  const handleMouseMove = (e) => {
+    if (tooltip.show) {
+      setTooltip((prev) => ({
+        ...prev,
+        x: e.clientX,
+        y: e.clientY - 10,
+      }));
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setTooltip({ show: false, text: "", x: 0, y: 0 });
+  };
+
   // Renderizza la cella di un turno
   const renderTurnoCell = (date, slot, postazione) => {
     console.log("🎯 Rendering cella per:", {
@@ -1418,12 +1735,31 @@ const Autocompilazione = () => {
     const key = `${date}-${slot.id}-${postazione.id}`;
     const pendingAssignmentsForSlot = pendingAssignments.get(key) || [];
 
+    // Filtra le assegnazioni pending che sono state rimosse
+    // (non dovrebbe essere necessario ma è una doppia verifica)
+    const validPendingAssignments = pendingAssignmentsForSlot.filter((pending) => {
+      for (const [assegnazioneId, volontariSet] of pendingRemovals) {
+        if (!volontariSet || volontariSet.size === 0) continue;
+        const matchingExisting = existingAssignments.find(
+          (a) =>
+            a.assegnazione_id === parseInt(assegnazioneId, 10) &&
+            a.volontario_id === pending.volontario_id
+        );
+        if (matchingExisting && volontariSet.has(pending.volontario_id)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
     const maxProclamatori = postazione.max_proclamatori || 3;
+    // Usa validPendingAssignments invece di pendingAssignmentsForSlot per escludere quelle rimosse
     const totalAssignments =
-      existingAssignments.length + pendingAssignmentsForSlot.length;
+      existingAssignments.length + validPendingAssignments.length;
     const isAssigned = totalAssignments > 0;
     const hasAvailableVolunteers = availableVolunteers.length > 0;
     const isFullyAssigned = totalAssignments >= maxProclamatori;
+    const hasMan = hasManInSlot(date, slot.id, postazione.id);
 
     // Se non ci sono volontari disponibili
     if (!hasAvailableVolunteers) {
@@ -1436,23 +1772,40 @@ const Autocompilazione = () => {
 
     // Se è già completamente assegnato
     if (isFullyAssigned) {
+      // Determina il colore: verde se c'è almeno un uomo, arancione se no
+      const bgColor = hasMan ? "bg-green-100" : "bg-orange-100";
+      const borderColor = hasMan ? "border-green-300" : "border-orange-300";
+      const textColor = hasMan ? "text-green-700" : "text-orange-700";
+
       return (
-        <div className="text-center p-2 bg-green-100 border border-green-300 rounded">
-          <div className="text-xs text-green-700 font-medium mb-1">
-            {totalAssignments}/{maxProclamatori} assegnati
+        <div className={`text-center p-2 ${bgColor} border ${borderColor} rounded`}>
+          <div className="flex items-center justify-center mb-1">
+            <div className={`text-xs ${textColor} font-medium`}>
+              {totalAssignments}/{maxProclamatori} assegnati
+            </div>
+            {!hasMan && (
+              <ExclamationTriangleIcon className="h-4 w-4 ml-1 text-orange-600" title="Manca almeno un uomo nel gruppo" />
+            )}
           </div>
 
           {/* Mostra assegnazioni esistenti */}
           {existingAssignments.map((assignment, index) => (
             <div
               key={`existing-${index}`}
-              className="flex items-center justify-between text-xs mb-1 text-green-700"
+              className={`flex items-center justify-between text-xs mb-1 ${textColor}`}
             >
               <div className="flex items-center flex-1 min-w-0">
-                <span className="font-medium truncate">
+                <span
+                  className="font-medium truncate cursor-help"
+                  onMouseEnter={(e) =>
+                    handleMouseEnter(e, `${assignment.nome} ${assignment.cognome}`)
+                  }
+                  onMouseMove={handleMouseMove}
+                  onMouseLeave={handleMouseLeave}
+                >
                   {assignment.nome} {assignment.cognome}
                 </span>
-                <span className="text-xs bg-green-200 px-2 py-1 rounded-full ml-2 flex-shrink-0">
+                <span className={`text-xs ${hasMan ? "bg-green-200" : "bg-orange-200"} px-2 py-1 rounded-full ml-2 flex-shrink-0 ${hasMan ? "text-green-800" : "text-orange-800"}`}>
                   {(() => {
                     const contatori = getContatoriDinamici(assignment.volontario_id);
                     return `${contatori.assegnazioni_totali} - ${contatori.disponibilita_totali}`;
@@ -1475,7 +1828,7 @@ const Autocompilazione = () => {
           ))}
 
           {/* Mostra assegnazioni in sospeso */}
-          {pendingAssignmentsForSlot.map((pending, index) => {
+          {validPendingAssignments.map((pending, index) => {
             const volunteerData = data?.disponibilita?.find(
               (d) =>
                 d.volontario_id === pending.volontario_id &&
@@ -1489,7 +1842,19 @@ const Autocompilazione = () => {
                 className="flex items-center justify-between text-xs mb-1 text-orange-700 bg-orange-50 px-1 rounded"
               >
                 <div className="flex items-center flex-1 min-w-0">
-                  <span className="font-medium truncate">
+                  <span
+                    className="font-medium truncate cursor-help"
+                    onMouseEnter={(e) =>
+                      handleMouseEnter(
+                        e,
+                        volunteerData
+                          ? `${volunteerData.nome} ${volunteerData.cognome}`
+                          : `Volontario ${pending.volontario_id}`
+                      )
+                    }
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                  >
                     {volunteerData
                       ? `${volunteerData.nome} ${volunteerData.cognome}`
                       : `Volontario ${pending.volontario_id}`}
@@ -1536,23 +1901,40 @@ const Autocompilazione = () => {
 
     // Se è parzialmente assegnato
     if (isAssigned) {
+      // Per slot parziali: giallo se ha uomo o nessuno ancora, arancione-giallo se senza uomo
+      const bgColor = hasMan ? "bg-yellow-100" : "bg-orange-50";
+      const borderColor = hasMan ? "border-yellow-300" : "border-orange-300";
+      const textColor = hasMan ? "text-yellow-700" : "text-orange-700";
+
       return (
-        <div className="text-center p-2 bg-yellow-100 border border-yellow-300 rounded">
-          <div className="text-xs text-yellow-700 font-medium mb-1">
-            {totalAssignments}/{maxProclamatori} assegnati
+        <div className={`text-center p-2 ${bgColor} border ${borderColor} rounded`}>
+          <div className="flex items-center justify-center mb-1">
+            <div className={`text-xs ${textColor} font-medium`}>
+              {totalAssignments}/{maxProclamatori} assegnati
+            </div>
+            {!hasMan && (
+              <ExclamationTriangleIcon className="h-4 w-4 ml-1 text-orange-600" title="Manca almeno un uomo nel gruppo" />
+            )}
           </div>
 
           {/* Mostra assegnazioni esistenti */}
           {existingAssignments.map((assignment, index) => (
             <div
               key={`existing-${index}`}
-              className="flex items-center justify-between text-xs mb-1 text-yellow-700"
+              className={`flex items-center justify-between text-xs mb-1 ${textColor}`}
             >
               <div className="flex items-center flex-1 min-w-0">
-                <span className="font-medium truncate">
+                <span
+                  className="font-medium truncate cursor-help"
+                  onMouseEnter={(e) =>
+                    handleMouseEnter(e, `${assignment.nome} ${assignment.cognome}`)
+                  }
+                  onMouseMove={handleMouseMove}
+                  onMouseLeave={handleMouseLeave}
+                >
                   {assignment.nome} {assignment.cognome}
                 </span>
-                <span className="text-xs bg-yellow-200 px-2 py-1 rounded-full ml-2 flex-shrink-0">
+                <span className={`text-xs ${hasMan ? "bg-yellow-200" : "bg-orange-200"} px-2 py-1 rounded-full ml-2 flex-shrink-0 ${hasMan ? "text-yellow-800" : "text-orange-800"}`}>
                   {(() => {
                     const contatori = getContatoriDinamici(assignment.volontario_id);
                     return `${contatori.assegnazioni_totali} - ${contatori.disponibilita_totali}`;
@@ -1575,7 +1957,7 @@ const Autocompilazione = () => {
           ))}
 
           {/* Mostra assegnazioni in sospeso */}
-          {pendingAssignmentsForSlot.map((pending, index) => {
+          {validPendingAssignments.map((pending, index) => {
             const volunteerData = data?.disponibilita?.find(
               (d) =>
                 d.volontario_id === pending.volontario_id &&
@@ -1589,7 +1971,19 @@ const Autocompilazione = () => {
                 className="flex items-center justify-between text-xs mb-1 text-orange-700 bg-orange-50 px-1 rounded"
               >
                 <div className="flex items-center flex-1 min-w-0">
-                  <span className="font-medium truncate">
+                  <span
+                    className="font-medium truncate cursor-help"
+                    onMouseEnter={(e) =>
+                      handleMouseEnter(
+                        e,
+                        volunteerData
+                          ? `${volunteerData.nome} ${volunteerData.cognome}`
+                          : `Volontario ${pending.volontario_id}`
+                      )
+                    }
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                  >
                     {volunteerData
                       ? `${volunteerData.nome} ${volunteerData.cognome}`
                       : `Volontario ${pending.volontario_id}`}
@@ -1651,7 +2045,7 @@ const Autocompilazione = () => {
                   !existingAssignments.some(
                     (a) => a.volontario_id === v.volontario_id
                   ) &&
-                  !pendingAssignmentsForSlot.some(
+                  !validPendingAssignments.some(
                     (p) => p.volontario_id === v.volontario_id
                   )
               )
@@ -1701,7 +2095,7 @@ const Autocompilazione = () => {
                 !existingAssignments.some(
                   (a) => a.volontario_id === v.volontario_id
                 ) &&
-                !pendingAssignmentsForSlot.some(
+                !validPendingAssignments.some(
                   (p) => p.volontario_id === v.volontario_id
                 )
             )
@@ -1731,6 +2125,24 @@ const Autocompilazione = () => {
 
   return (
     <div className="p-6">
+      {/* Tooltip per i nomi troncati */}
+      {tooltip.show && (
+        <div
+          className="fixed z-50 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded-md shadow-lg pointer-events-none"
+          style={{
+            left: `${tooltip.x}px`,
+            top: `${tooltip.y}px`,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          {tooltip.text}
+          <div
+            className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"
+            style={{ marginTop: "-1px" }}
+          />
+        </div>
+      )}
+
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
           Gestione Turni - Vista Mensile
@@ -1796,6 +2208,21 @@ const Autocompilazione = () => {
               </p>
               <p className="ml-4 text-blue-600">
                 • <strong>Esempio</strong>: Mario Rossi (8 - 32) = 8 assegnazioni totali, 32 disponibilità totali
+              </p>
+              <p className="font-medium mt-2 mb-1">
+                🎨 Legenda colori degli slot:
+              </p>
+              <p className="ml-4">
+                • <span className="inline-block w-3 h-3 bg-blue-100 border border-blue-300 rounded mr-1"></span> <strong>Blu</strong>: Slot vuoto (nessun volontario assegnato)
+              </p>
+              <p className="ml-4">
+                • <span className="inline-block w-3 h-3 bg-yellow-100 border border-yellow-300 rounded mr-1"></span> <strong>Giallo</strong>: Assegnazione parziale (non tutti i posti coperti)
+              </p>
+              <p className="ml-4">
+                • <span className="inline-block w-3 h-3 bg-green-100 border border-green-300 rounded mr-1"></span> <strong>Verde</strong>: Assegnazione completa con almeno un uomo
+              </p>
+              <p className="ml-4">
+                • <span className="inline-block w-3 h-3 bg-orange-100 border border-orange-300 rounded mr-1"></span> <strong>Arancione</strong>: Assegnazione completa ma manca almeno un uomo <span className="text-orange-600">⚠️</span>
               </p>
             </div>
           </div>
@@ -1883,10 +2310,23 @@ const Autocompilazione = () => {
             <div className="p-4 border-b border-gray-200">
               <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    <MapPinIcon className="h-5 w-5 inline mr-2 text-primary-600" />
-                    {postazione.luogo}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      <MapPinIcon className="h-5 w-5 inline mr-2 text-primary-600" />
+                      {postazione.luogo}
+                    </h3>
+                    {isPostazioneComplete(postazione) ? (
+                      <CheckCircleIcon
+                        className="h-6 w-6 text-green-500"
+                        title="Postazione completa per questo mese"
+                      />
+                    ) : (
+                      <ClockIcon
+                        className="h-6 w-6 text-orange-500"
+                        title="Postazione non ancora completa per questo mese"
+                      />
+                    )}
+                  </div>
                   <p className="text-sm text-gray-600">
                     {postazione.indirizzo}
                   </p>
@@ -1983,7 +2423,7 @@ const Autocompilazione = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ borderRight: '1px solid #d1d5db', boxShadow: '1px 0 0 0 #d1d5db' }}>
                       Orario
                     </th>
                     {data?.dateRange?.map((date) => {
@@ -2018,10 +2458,16 @@ const Autocompilazione = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {postazione.slot_orari?.map((slot) => (
                     <tr key={slot.id}>
-                      <td className="px-3 py-2 text-sm font-medium text-gray-900 whitespace-nowrap">
-                        <ClockIcon className="h-4 w-4 inline mr-1 text-primary-600" />
-                        {formatTime(slot.orario_inizio)} -{" "}
-                        {formatTime(slot.orario_fine)}
+                      <td className="sticky left-0 z-10 bg-white px-2 py-2 text-center" style={{ borderRight: '1px solid #d1d5db', boxShadow: '1px 0 0 0 #d1d5db' }}>
+                        <div className="flex flex-col items-center justify-center space-y-0.5">
+                          <ClockIcon className="h-4 w-4 text-primary-600" />
+                          <span className="text-xs font-medium text-gray-900 leading-tight">
+                            {formatTime(slot.orario_inizio)}
+                          </span>
+                          <span className="text-xs font-medium text-gray-900 leading-tight">
+                            {formatTime(slot.orario_fine)}
+                          </span>
+                        </div>
                       </td>
                       {data?.dateRange?.map((date) => {
                         // Verifica se questa postazione è attiva per questa data

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import axios from "axios";
+import { api } from "../utils/api";
 import toast from "react-hot-toast";
 import {
   UserIcon,
@@ -9,7 +9,7 @@ import {
 } from "@heroicons/react/24/outline";
 
 const ElencoVolontari = () => {
-  const { user: _user } = useAuth();
+  const { activeCongregazione } = useAuth();
   const [allVolontari, setAllVolontari] = useState([]); // Tutti i volontari dal server
   const [filteredVolontari, setFilteredVolontari] = useState([]); // Volontari filtrati
   const [loading, setLoading] = useState(true);
@@ -30,8 +30,8 @@ const ElencoVolontari = () => {
   const fetchVolontari = useCallback(async () => {
     try {
       setLoading(true);
-      // Richiedi tutti i volontari senza paginazione per le statistiche
-      const response = await axios.get(`/volontari?limit=1000`);
+      // Richiedi tutti i volontari filtrati per congregazione (se non super_admin)
+      const response = await api.get(`/volontari?limit=1000`);
 
       if (response.data.volontari) {
         setAllVolontari(response.data.volontari);
@@ -48,7 +48,7 @@ const ElencoVolontari = () => {
 
   useEffect(() => {
     fetchVolontari();
-  }, [fetchVolontari]);
+  }, [fetchVolontari, activeCongregazione]);
 
   // Filtro client-side in tempo reale
   useEffect(() => {

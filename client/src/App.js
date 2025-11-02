@@ -4,6 +4,7 @@ import {
   Routes,
   Route,
   Navigate,
+  useLocation,
 } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import Sidebar from "./components/Sidebar";
@@ -21,12 +22,14 @@ import Notifiche from "./pages/Notifiche";
 import Cronologia from "./pages/Cronologia";
 import Assistenza from "./pages/Assistenza";
 import Impostazioni from "./pages/Impostazioni";
+import Congregazioni from "./pages/Congregazioni";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import "./index.css";
 
 // Componente per il layout protetto
 const ProtectedLayout = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
+  const { isAuthenticated, loading, user, activeCongregazione } = useAuth();
 
   // Mostra loading screen mentre verifica il token
   if (loading) {
@@ -48,13 +51,30 @@ const ProtectedLayout = ({ children }) => {
   return (
     <div className="flex h-screen bg-gray-100">
       <Sidebar />
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto">
+        {user?.ruolo === "super_admin" &&
+          !activeCongregazione?.id &&
+          location.pathname !== "/congregazioni" && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3">
+              Seleziona una congregazione attiva dalla sezione <strong>Congregazioni</strong> per operare sui dati.
+            </div>
+          )}
+        {children}
+      </main>
     </div>
   );
 };
 
 // Componente per le pagine protette
 const ProtectedRoute = ({ children }) => {
+  return <ProtectedLayout>{children}</ProtectedLayout>;
+};
+
+const SuperAdminRoute = ({ children }) => {
+  const { user } = useAuth();
+  if (user?.ruolo !== "super_admin") {
+    return <Navigate to="/" replace />;
+  }
   return <ProtectedLayout>{children}</ProtectedLayout>;
 };
 
@@ -170,6 +190,14 @@ function App() {
                 <ProtectedRoute>
                   <Assistenza />
                 </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/congregazioni"
+              element={
+                <SuperAdminRoute>
+                  <Congregazioni />
+                </SuperAdminRoute>
               }
             />
             <Route

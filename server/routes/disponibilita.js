@@ -1,8 +1,12 @@
 const express = require("express");
 const Joi = require("joi");
 const db = require("../config/database");
+const { authenticateToken, authorizeRoles } = require("../middleware/auth");
+const { resolveCongregazioneId, enforceSameCongregazione, ensureEntityAccess } = require("../utils/congregazioni");
 
 const router = express.Router();
+
+router.use(authenticateToken);
 
 // Schema di validazione per le disponibilità
 const disponibilitaSchema = Joi.object({
@@ -34,7 +38,16 @@ const singolaDisponibilitaSchema = Joi.object({
 // GET /api/disponibilita/volontario/:id - Ottieni le disponibilità di un volontario
 router.get("/volontario/:id", async (req, res) => {
   try {
-    const { id } = req.params;
+    const volontarioId = parseInt(req.params.id, 10);
+    if (Number.isNaN(volontarioId)) {
+      return res.status(400).json({ message: "ID volontario non valido" });
+    }
+
+    const congregazioneId = await ensureEntityAccess(req, 'volontari', volontarioId);
+    if (congregazioneId === null) {
+      return res.status(404).json({ message: "Volontario non trovato" });
+    }
+
     const { data_inizio, data_fine, stato } = req.query;
 
     let query = `
@@ -46,22 +59,24 @@ router.get("/volontario/:id", async (req, res) => {
         d.note,
         d.created_at,
         d.slot_orario_id,
-        v.nome, 
-        v.cognome, 
-        v.sesso, 
+        v.nome,
+        v.cognome,
+        v.sesso,
         so.orario_inizio,
         so.orario_fine,
-        p.luogo as postazione_luogo,
-        p.id as postazione_id
+        p.luogo AS postazione_luogo,
+        p.id AS postazione_id
       FROM disponibilita d
       JOIN volontari v ON d.volontario_id = v.id
       JOIN slot_orari so ON d.slot_orario_id = so.id
       JOIN postazioni p ON so.postazione_id = p.id
       WHERE d.volontario_id = $1
+        AND d.congregazione_id = $2
         AND p.stato = 'attiva'
     `;
-    const params = [id];
-    let paramIndex = 2;
+
+    const params = [volontarioId, congregazioneId];
+    let paramIndex = 3;
 
     if (data_inizio) {
       query += ` AND d.data >= $${paramIndex++}`;
@@ -84,61 +99,85 @@ router.get("/volontario/:id", async (req, res) => {
     res.json(disponibilita);
   } catch (error) {
     console.error("Errore nel recupero delle disponibilità:", error);
-    res.status(500).json({ message: "Errore interno del server" });
+    console.error("Stack trace:", error.stack);
+    console.error("Dettagli richiesta:", {
+      volontarioId: req.params.id,
+      query: req.query,
+      user: req.user?.id,
+    });
+    res.status(500).json({ 
+      message: "Errore interno del server",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 });
 
 // POST /api/disponibilita/volontario - Salva le disponibilità di un volontario
 router.post("/volontario", async (req, res) => {
   try {
-    console.log("🔍 Debug - Richiesta ricevuta:", {
-      body: req.body,
-      headers: req.headers,
-    });
-
     const { error, value } = disponibilitaSchema.validate(req.body);
     if (error) {
-      console.error("❌ Errore di validazione:", error.details);
-      return res.status(400).json({ message: error.details[0].message });
+      console.error("Errore validazione disponibilità:", error.details);
+      console.error("Body ricevuto:", JSON.stringify(req.body, null, 2));
+      return res.status(400).json({ 
+        message: error.details[0].message,
+        details: process.env.NODE_ENV === "development" ? error.details : undefined
+      });
     }
-
-    console.log("✅ Validazione superata, dati:", value);
 
     const { volontario_id, disponibilita } = value;
 
-    // Verifica che il volontario esista
-    const volontario = await db.oneOrNone(
-      "SELECT id FROM volontari WHERE id = $1",
-      [volontario_id]
-    );
-
-    if (!volontario) {
-      return res.status(404).json({ message: "Volontario non trovato" });
+    if (req.user.ruolo === 'volontario' && req.user.id !== volontario_id) {
+      return res.status(403).json({ message: 'Non puoi modificare le disponibilità di altri volontari' });
     }
 
-    // Inizia una transazione
+    const congregazioneId = await ensureEntityAccess(req, 'volontari', volontario_id);
+    if (congregazioneId === null) {
+      return res.status(404).json({ message: 'Volontario non trovato' });
+    }
+
+    const slotIds = [...new Set(disponibilita.map((d) => d.slot_orario_id))];
+
+    if (slotIds.length === 0) {
+      return res.status(400).json({ message: 'Nessuna disponibilità fornita' });
+    }
+
+    const slots = await db.any(
+      `SELECT id, congregazione_id FROM slot_orari WHERE id = ANY($1::int[])`,
+      [slotIds]
+    );
+
+    if (slots.length !== slotIds.length) {
+      return res.status(400).json({ message: 'Uno o più slot orari non esistono' });
+    }
+
+    const invalidSlot = slots.find((slot) => slot.congregazione_id !== congregazioneId);
+    if (invalidSlot) {
+      return res
+        .status(403)
+        .json({ message: 'Slot orario non appartiene alla congregazione del volontario' });
+    }
+
     await db.tx(async (t) => {
-      // Elimina le disponibilità esistenti per le date specificate
       const dateToUpdate = [...new Set(disponibilita.map((d) => d.data))];
+
       if (dateToUpdate.length > 0) {
-        // Usa un approccio più sicuro per il cast delle date
-        const datePlaceholders = dateToUpdate
-          .map((_, index) => `$${index + 2}::date`)
-          .join(",");
         await t.none(
-          `DELETE FROM disponibilita 
-           WHERE volontario_id = $1 AND data IN (${datePlaceholders})`,
-          [volontario_id, ...dateToUpdate]
+          `DELETE FROM disponibilita
+           WHERE volontario_id = $1
+             AND congregazione_id = $2
+             AND data = ANY($3::date[])`,
+          [volontario_id, congregazioneId, dateToUpdate]
         );
       }
 
-      // Inserisci le nuove disponibilità
       for (const disp of disponibilita) {
         await t.none(
-          `INSERT INTO disponibilita (volontario_id, data, slot_orario_id, stato, note)
-           VALUES ($1, $2, $3, $4, $5)`,
+          `INSERT INTO disponibilita (volontario_id, congregazione_id, data, slot_orario_id, stato, note)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
           [
             volontario_id,
+            congregazioneId,
             disp.data,
             disp.slot_orario_id,
             disp.stato,
@@ -148,42 +187,59 @@ router.post("/volontario", async (req, res) => {
       }
     });
 
-    res.json({ message: "Disponibilità salvate con successo" });
+    res.json({ message: 'Disponibilità salvate con successo' });
   } catch (error) {
-    console.error("Errore nel salvataggio delle disponibilità:", error);
-    res.status(500).json({ message: "Errore interno del server" });
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+
+    console.error('Errore nel salvataggio delle disponibilità:', error);
+    res.status(500).json({ message: 'Errore interno del server' });
   }
 });
 
 // GET /api/disponibilita/postazione/:id - Ottieni le disponibilità per una postazione specifica
 router.get("/postazione/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    const { data_inizio, data_fine } = req.query;
+    const postazioneId = parseInt(req.params.id, 10);
+    if (Number.isNaN(postazioneId)) {
+      return res.status(400).json({ message: "ID postazione non valido" });
+    }
 
-    // Ottieni la postazione con i suoi slot orari
     const postazione = await db.oneOrNone(
-      `SELECT p.*, 
-              json_agg(
-                json_build_object(
-                  'id', so.id,
-                  'orario_inizio', so.orario_inizio,
-                  'orario_fine', so.orario_fine,
-                  'max_volontari', so.max_volontari
-                ) ORDER BY so.orario_inizio
-              ) FILTER (WHERE so.id IS NOT NULL) as slot_orari
+      `SELECT p.*,
+              COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', so.id,
+                    'orario_inizio', so.orario_inizio,
+                    'orario_fine', so.orario_fine,
+                    'max_volontari', so.max_volontari
+                  ) ORDER BY so.orario_inizio
+                ) FILTER (WHERE so.id IS NOT NULL),
+                '[]'::json
+              ) AS slot_orari
        FROM postazioni p
        LEFT JOIN slot_orari so ON p.id = so.postazione_id
        WHERE p.id = $1
        GROUP BY p.id`,
-      [id]
+      [postazioneId]
     );
 
     if (!postazione) {
       return res.status(404).json({ message: "Postazione non trovata" });
     }
 
-    // Ottieni le disponibilità per i giorni della postazione
+    try {
+      enforceSameCongregazione(req, postazione.congregazione_id);
+    } catch (authError) {
+      return res
+        .status(authError.statusCode || 403)
+        .json({ message: authError.message });
+    }
+
+    const { data_inizio, data_fine } = req.query;
+
     let query = `
       SELECT d.*, v.nome, v.cognome, v.sesso, so.orario_inizio, so.orario_fine
       FROM disponibilita d
@@ -191,10 +247,12 @@ router.get("/postazione/:id", async (req, res) => {
       JOIN slot_orari so ON d.slot_orario_id = so.id
       WHERE v.stato = 'attivo'
         AND d.stato = 'disponibile'
-        AND EXTRACT(DOW FROM d.data) = ANY($1)
+        AND d.congregazione_id = $1
+        AND so.postazione_id = $2
+        AND EXTRACT(DOW FROM d.data) = ANY($3)
     `;
-    const params = [postazione.giorni_settimana];
-    let paramIndex = 2;
+    const params = [postazione.congregazione_id, postazioneId, postazione.giorni_settimana];
+    let paramIndex = 4;
 
     if (data_inizio) {
       query += ` AND d.data >= $${paramIndex++}`;
@@ -254,6 +312,11 @@ router.get("/postazione/:id", async (req, res) => {
 router.get("/riepilogo", async (req, res) => {
   try {
     const { data_inizio, data_fine } = req.query;
+    const targetCongregazioneId = await resolveCongregazioneId(req, {
+      allowNullForSuperAdmin: true,
+    });
+    const filterCongregazioneId =
+      targetCongregazioneId ?? (req.user.ruolo === "super_admin" ? null : req.user.congregazione_id);
 
     let query = `
       SELECT 
@@ -279,6 +342,11 @@ router.get("/riepilogo", async (req, res) => {
     `;
     const params = [];
     let paramIndex = 1;
+
+    if (filterCongregazioneId) {
+      query += ` AND d.congregazione_id = $${paramIndex++}`;
+      params.push(filterCongregazioneId);
+    }
 
     if (data_inizio) {
       query += ` AND d.data >= $${paramIndex++}`;
@@ -323,6 +391,24 @@ router.get("/contatori-mensili", async (req, res) => {
     }
 
     // Query per ottenere i contatori di disponibilità e assegnazioni per ogni volontario
+    const targetCongregazioneId = await resolveCongregazioneId(req, {
+      allowNullForSuperAdmin: true,
+    });
+    const filterCongregazioneId =
+      targetCongregazioneId ?? (req.user.ruolo === "super_admin" ? null : req.user.congregazione_id);
+
+    const condizioniVolontari = [];
+    const condizioniAssegnazioni = [];
+    const params = [data_inizio, data_fine];
+    let paramIndex = 3;
+
+    if (filterCongregazioneId) {
+      condizioniVolontari.push(`v.congregazione_id = $${paramIndex}`);
+      condizioniAssegnazioni.push(`v.congregazione_id = $${paramIndex}`);
+      params.push(filterCongregazioneId);
+      paramIndex += 1;
+    }
+
     const query = `
       WITH disponibilita_count AS (
         SELECT 
@@ -336,6 +422,7 @@ router.get("/contatori-mensili", async (req, res) => {
           AND d.data <= $2::date
           AND d.stato = 'disponibile'
         WHERE v.stato = 'attivo'
+        ${condizioniVolontari.length ? `AND ${condizioniVolontari.join(" AND ")}` : ""}
         GROUP BY v.id, v.nome, v.cognome
       ),
       assegnazioni_count AS (
@@ -349,6 +436,7 @@ router.get("/contatori-mensili", async (req, res) => {
           AND a.data_turno <= $2::date
           AND a.stato IN ('attivo', 'assegnato')
         WHERE v.stato = 'attivo'
+        ${condizioniAssegnazioni.length ? `AND ${condizioniAssegnazioni.join(" AND ")}` : ""}
         GROUP BY v.id
       )
       SELECT 
@@ -362,7 +450,7 @@ router.get("/contatori-mensili", async (req, res) => {
       ORDER BY dc.nome, dc.cognome
     `;
 
-    const contatori = await db.any(query, [data_inizio, data_fine]);
+    const contatori = await db.any(query, params);
 
     // Trasforma i risultati in un oggetto per accesso rapido
     const contatoriMap = {};
@@ -385,12 +473,31 @@ router.get("/contatori-mensili", async (req, res) => {
 // DELETE /api/disponibilita/volontario/:id - Elimina le disponibilità di un volontario
 router.delete("/volontario/:id", async (req, res) => {
   try {
-    const { id } = req.params;
+    const volontarioId = parseInt(req.params.id, 10);
+    if (Number.isNaN(volontarioId)) {
+      return res.status(400).json({ message: "ID volontario non valido" });
+    }
+
+    if (req.user.ruolo === "volontario" && req.user.id !== volontarioId) {
+      return res
+        .status(403)
+        .json({ message: "Non puoi eliminare disponibilità di altri volontari" });
+    }
+
+    const congregazioneId = await ensureEntityAccess(req, "volontari", volontarioId);
+    if (congregazioneId === null) {
+      return res.status(404).json({ message: "Volontario non trovato" });
+    }
+
     const { data_inizio, data_fine } = req.query;
 
-    let query = "DELETE FROM disponibilita WHERE volontario_id = $1";
-    const params = [id];
-    let paramIndex = 2;
+    let query = `
+      DELETE FROM disponibilita 
+      WHERE volontario_id = $1
+        AND congregazione_id = $2
+    `;
+    const params = [volontarioId, congregazioneId];
+    let paramIndex = 3;
 
     if (data_inizio) {
       query += ` AND data >= $${paramIndex++}`;

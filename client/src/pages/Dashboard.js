@@ -10,7 +10,7 @@ import {
 } from "@heroicons/react/24/outline";
 
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, activeCongregazione } = useAuth();
   const [stats, setStats] = useState({
     totalVolontari: 0,
     postazioniAttive: 0,
@@ -24,6 +24,16 @@ const Dashboard = () => {
 
   useEffect(() => {
     const fetchStats = async () => {
+      // Non fare nulla se l'utente non è ancora caricato
+      if (!user?.id) {
+        return;
+      }
+
+      // Se la congregazione attiva è cambiata, aspetta un momento per permettere l'aggiornamento del localStorage
+      if (activeCongregazione) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
       try {
         setLoading(true);
         setError(null);
@@ -36,26 +46,44 @@ const Dashboard = () => {
           .split("T")[0];
 
         // Carica i dati reali dal backend
-        const [volontariRes, postazioniRes, turniRes] = await Promise.all([
+        // Gestisci l'API dei turni separatamente perché potrebbe fallire se non ci sono turni
+        const [volontariRes, postazioniRes, turniRes] = await Promise.allSettled([
           api.get("/volontari"),
           api.get("/postazioni"),
           api.get(
             `/turni?volontario_id=${user.id}&data_inizio=${dataInizio}&data_fine=${dataFine}&stato=assegnato`
-          ),
+          ).catch((err) => {
+            // Se l'API dei turni fallisce, restituisci array vuoto
+            console.warn("Errore nel caricamento turni:", err);
+            return { data: [] };
+          }),
         ]);
 
         // Calcola le statistiche dai dati reali
+        const volontariData = volontariRes.status === 'fulfilled' 
+          ? volontariRes.value.data 
+          : { volontari: [], pagination: { total: 0 } };
+        
+        const postazioniData = postazioniRes.status === 'fulfilled'
+          ? postazioniRes.value.data
+          : [];
+        
+        const turniData = turniRes.status === 'fulfilled'
+          ? turniRes.value.data
+          : [];
+
         const totalVolontari =
-          volontariRes.data.pagination?.total ||
-          volontariRes.data.volontari?.length ||
-          0;
-        const postazioniAttive = Array.isArray(postazioniRes.data)
-          ? postazioniRes.data.length
-          : postazioniRes.data.total || 0;
+          volontariData.pagination?.total ||
+          volontariData.volontari?.length ||
+          (Array.isArray(volontariData) ? volontariData.length : 0);
+        
+        const postazioniAttive = Array.isArray(postazioniData)
+          ? postazioniData.length
+          : postazioniData.total || 0;
 
         // Processa i turni assegnati all'utente
-        const prossimiTurni = Array.isArray(turniRes.data)
-          ? turniRes.data.map((turno) => ({
+        const prossimiTurni = Array.isArray(turniData)
+          ? turniData.map((turno) => ({
               id: turno.id,
               luogo: turno.luogo,
               data: turno.data_turno,
@@ -85,11 +113,23 @@ const Dashboard = () => {
         setStats(newStats);
       } catch (err) {
         console.error("Errore nel caricamento delle statistiche:", err);
+        console.error("Dettagli errore:", {
+          message: err.message,
+          response: err.response?.data,
+          status: err.response?.status,
+        });
 
         // Se è un errore di autenticazione, non mostrare errore (verrà gestito dall'AuthContext)
-        if (err.response?.status !== 401) {
-          setError("Errore nel caricamento delle statistiche");
+        if (err.response?.status === 401) {
+          return;
         }
+
+        // Mostra messaggio di errore più dettagliato
+        const errorMessage =
+          err.response?.data?.message ||
+          err.message ||
+          "Errore nel caricamento delle statistiche";
+        setError(errorMessage);
 
         // Fallback con dati di base
         setStats({
@@ -106,7 +146,7 @@ const Dashboard = () => {
     };
 
     fetchStats();
-  }, []);
+  }, [user?.id, activeCongregazione?.id]);
 
   const StatCard = ({ title, value, icon: Icon, color = "blue" }) => (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">

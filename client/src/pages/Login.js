@@ -5,7 +5,8 @@ import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 
 const Login = () => {
-  const [email, setEmail] = useState("");
+  const [congregazioneCode, setCongregazioneCode] = useState("001");
+  const [identificatore, setIdentificatore] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -23,7 +24,21 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
 
-    const result = await login(email, password);
+    const normalizedCode = congregazioneCode?.trim().padStart(3, "0");
+
+    if (!congregazioneCode?.trim()) {
+      toast.error("Inserisci l'ID congregazione (es. 001)");
+      setLoading(false);
+      return;
+    }
+
+    if (!identificatore?.trim()) {
+      toast.error("Inserisci email o numero di telefono");
+      setLoading(false);
+      return;
+    }
+
+    const result = await login(identificatore, password, normalizedCode);
     if (result.success) {
       // Toast di benvenuto dopo login riuscito
       setTimeout(() => {
@@ -69,19 +84,41 @@ const Login = () => {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
-              <label htmlFor="email" className="sr-only">
-                Email
+              <label htmlFor="congregazione" className="sr-only">
+                ID Congregazione
               </label>
               <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
+                id="congregazione"
+                name="congregazione"
+                type="text"
+                inputMode="numeric"
+                pattern="^[0-9]{3}$"
+                title="Inserisci un ID congregazione di 3 cifre (es. 001)"
+                autoComplete="off"
+                maxLength={3}
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={congregazioneCode}
+                onChange={(e) =>
+                  setCongregazioneCode(e.target.value.replace(/\D/g, ""))
+                }
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                placeholder="Indirizzo email"
+                placeholder="ID Congregazione (es. 001)"
+              />
+            </div>
+            <div>
+              <label htmlFor="identificatore" className="sr-only">
+                Email o telefono
+              </label>
+              <input
+                id="identificatore"
+                name="identificatore"
+                type="text"
+                autoComplete="username"
+                required
+                value={identificatore}
+                onChange={(e) => setIdentificatore(e.target.value)}
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+                placeholder="Email o numero di telefono"
               />
             </div>
             <div className="relative">
@@ -132,7 +169,7 @@ const Login = () => {
 
           <div className="text-center">
             <p className="text-xs text-gray-500">
-              Credenziali di test: admin@planner.com / password123
+              Credenziali di test: ID 001 · admin@planner.com · password123
             </p>
           </div>
         </form>

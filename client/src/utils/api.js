@@ -11,6 +11,41 @@ export const addTokenToRequest = (config = {}) => {
     config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
+  // Aggiungi header X-Congregazione-Id se presente
+  // Prima controlla activeCongregazione nel localStorage (per super_admin)
+  // Se non presente, usa la congregazione dal token (decodificata)
+  let congregazioneId = null;
+  
+  const activeCongregazione = localStorage.getItem("activeCongregazione");
+  if (activeCongregazione) {
+    try {
+      const congregazione = JSON.parse(activeCongregazione);
+      if (congregazione?.id) {
+        congregazioneId = congregazione.id;
+      }
+    } catch (e) {
+      // Ignora errori di parsing
+    }
+  }
+  
+  // Se non c'è activeCongregazione, prova a decodificare dal token
+  if (!congregazioneId && token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.congregazione_id) {
+        congregazioneId = payload.congregazione_id;
+      }
+    } catch (e) {
+      // Ignora errori di parsing del token
+    }
+  }
+  
+  if (congregazioneId) {
+    config.headers = config.headers || {};
+    config.headers["X-Congregazione-Id"] = congregazioneId;
+  }
+  
   return config;
 };
 

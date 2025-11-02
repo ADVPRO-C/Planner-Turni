@@ -1,22 +1,27 @@
 const express = require("express");
 const Joi = require("joi");
 const db = require("../config/database");
+const { authenticateToken, authorizeRoles } = require("../middleware/auth");
+const {
+  resolveCongregazioneId,
+  enforceSameCongregazione,
+  ensureEntityAccess,
+} = require("../utils/congregazioni");
 
 const router = express.Router();
 
-// Schema di validazione per le postazioni
+router.use(authenticateToken);
+
 const postazioneSchema = Joi.object({
   luogo: Joi.string().min(2).max(255).required(),
-  indirizzo: Joi.string().max(500),
-  giorni_settimana: Joi.array()
-    .items(Joi.number().min(1).max(7))
-    .min(1)
-    .required(),
+  indirizzo: Joi.string().max(500).allow(null, ""),
+  giorni_settimana: Joi.array().items(Joi.number().min(1).max(7)).min(1).required(),
   stato: Joi.string().valid("attiva", "inattiva").default("attiva"),
   max_proclamatori: Joi.number().min(1).max(10).default(3),
   slot_orari: Joi.array()
     .items(
       Joi.object({
+        id: Joi.number().integer().positive().optional(),
         orario_inizio: Joi.string()
           .pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
           .required(),
@@ -24,19 +29,27 @@ const postazioneSchema = Joi.object({
           .pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
           .required(),
         max_volontari: Joi.number().min(1).max(10).default(3),
+        stato: Joi.string().valid("attivo", "inattivo").default("attivo"),
       })
     )
     .min(1)
     .required(),
+  congregazione_id: Joi.number().integer().positive().optional(),
 });
 
-// GET /api/postazioni - Ottieni tutte le postazioni con i loro slot orari
-router.get("/", async (req, res) => {
-  try {
-    const { stato, giorno, search } = req.query;
+const formatPostazione = (row) => ({
+  ...row,
+  slot_orari: row.slot_orari || [],
+  giorni_settimana: row.giorni_settimana || [],
+  turni_assegnati: Number(row.turni_assegnati || 0),
+});
 
-    let query = `
-      SELECT p.*, 
+const fetchPostazioneById = async (id) => {
+  return db.oneOrNone(
+    `
+    SELECT p.*,
+           COALESCE(turni.turni_assegnati, 0) AS turni_assegnati,
+           COALESCE(
              json_agg(
                json_build_object(
                  'id', so.id,
@@ -45,14 +58,40 @@ router.get("/", async (req, res) => {
                  'max_volontari', so.max_volontari,
                  'stato', so.stato
                ) ORDER BY so.orario_inizio
-             ) FILTER (WHERE so.id IS NOT NULL) as slot_orari
-      FROM postazioni p
-      LEFT JOIN slot_orari so ON p.id = so.postazione_id
-    `;
+             ) FILTER (WHERE so.id IS NOT NULL),
+             '[]'::json
+           ) AS slot_orari
+    FROM postazioni p
+    LEFT JOIN slot_orari so ON p.id = so.postazione_id
+    LEFT JOIN (
+      SELECT so.postazione_id, COUNT(DISTINCT a.id) AS turni_assegnati
+      FROM slot_orari so
+      LEFT JOIN assegnazioni a ON a.slot_orario_id = so.id
+      GROUP BY so.postazione_id
+    ) AS turni ON turni.postazione_id = p.id
+    WHERE p.id = $1
+    GROUP BY p.id, turni.turni_assegnati
+  `,
+    [id]
+  );
+};
+
+router.get("/", async (req, res) => {
+  try {
+    const { stato, giorno, search } = req.query;
+    const targetCongregazioneId = await resolveCongregazioneId(req);
 
     const conditions = [];
     const params = [];
     let paramIndex = 1;
+
+    if (targetCongregazioneId) {
+      conditions.push(`p.congregazione_id = $${paramIndex++}`);
+      params.push(targetCongregazioneId);
+    } else if (req.user.ruolo !== "super_admin") {
+      conditions.push(`p.congregazione_id = $${paramIndex++}`);
+      params.push(req.user.congregazione_id);
+    }
 
     if (stato) {
       conditions.push(`p.stato = $${paramIndex++}`);
@@ -61,250 +100,19 @@ router.get("/", async (req, res) => {
 
     if (giorno) {
       conditions.push(`$${paramIndex++} = ANY(p.giorni_settimana)`);
-      params.push(parseInt(giorno));
+      params.push(parseInt(giorno, 10));
     }
 
     if (search) {
-      conditions.push(
-        `(p.luogo ILIKE $${paramIndex++} OR p.indirizzo ILIKE $${paramIndex++})`
-      );
+      conditions.push(`(p.luogo ILIKE $${paramIndex} OR p.indirizzo ILIKE $${paramIndex + 1})`);
       params.push(`%${search}%`, `%${search}%`);
+      paramIndex += 2;
     }
 
-    if (conditions.length > 0) {
-      query += " WHERE " + conditions.join(" AND ");
-    }
-
-    query += " GROUP BY p.id ORDER BY p.luogo";
-
-    const postazioni = await db.any(query, params);
-
-    // Carica i conteggi dei turni per ogni postazione
-    for (let postazione of postazioni) {
-      try {
-        const turniCount = await db.one(
-          `SELECT COUNT(DISTINCT a.id) as count 
-           FROM slot_orari so 
-           LEFT JOIN assegnazioni a ON so.id = a.slot_orario_id 
-           WHERE so.postazione_id = $1`,
-          [postazione.id]
-        );
-        postazione.turni_assegnati = parseInt(turniCount.count);
-      } catch (error) {
-        console.error(
-          `Errore nel conteggio turni per postazione ${postazione.id}:`,
-          error
-        );
-        postazione.turni_assegnati = 0;
-      }
-    }
-
-    // Converti slot_orari da array PostgreSQL a array JavaScript
-    const postazioniFormattate = postazioni.map((postazione) => ({
-      ...postazione,
-      slot_orari: postazione.slot_orari || [],
-    }));
-
-    res.json(postazioniFormattate);
-  } catch (error) {
-    console.error("Errore nel recupero delle postazioni:", error);
-    res.status(500).json({ message: "Errore interno del server" });
-  }
-});
-
-// GET /api/postazioni/:id - Ottieni una postazione specifica con i suoi slot
-router.get("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const postazione = await db.oneOrNone(
-      `
-      SELECT p.*, 
-             json_agg(
-               json_build_object(
-                 'id', so.id,
-                 'orario_inizio', so.orario_inizio,
-                 'orario_fine', so.orario_fine,
-                 'max_volontari', so.max_volontari,
-                 'stato', so.stato
-               ) ORDER BY so.orario_inizio
-             ) FILTER (WHERE so.id IS NOT NULL) as slot_orari
-      FROM postazioni p
-      LEFT JOIN slot_orari so ON p.id = so.postazione_id
-      WHERE p.id = $1
-      GROUP BY p.id
-    `,
-      [id]
-    );
-
-    if (!postazione) {
-      return res.status(404).json({ message: "Postazione non trovata" });
-    }
-
-    postazione.slot_orari = postazione.slot_orari || [];
-    res.json(postazione);
-  } catch (error) {
-    console.error("Errore nel recupero della postazione:", error);
-    res.status(500).json({ message: "Errore interno del server" });
-  }
-});
-
-// POST /api/postazioni - Crea una nuova postazione con i suoi slot orari
-router.post("/", async (req, res) => {
-  try {
-    const { error, value } = postazioneSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({ message: error.details[0].message });
-    }
-
-    const {
-      luogo,
-      indirizzo,
-      giorni_settimana,
-      stato,
-      max_proclamatori,
-      slot_orari,
-    } = value;
-
-    // Inizia una transazione
-    const result = await db.tx(async (t) => {
-      // Crea la postazione
-      const newPostazione = await t.one(
-        `INSERT INTO postazioni (luogo, indirizzo, giorni_settimana, stato, max_proclamatori)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING *`,
-        [luogo, indirizzo, giorni_settimana, stato, max_proclamatori]
-      );
-
-      // Crea gli slot orari
-      for (const slot of slot_orari) {
-        await t.none(
-          `INSERT INTO slot_orari (postazione_id, orario_inizio, orario_fine, max_volontari)
-           VALUES ($1, $2, $3, $4)`,
-          [
-            newPostazione.id,
-            slot.orario_inizio,
-            slot.orario_fine,
-            slot.max_volontari,
-          ]
-        );
-      }
-
-      // Recupera la postazione completa con gli slot
-      const postazioneCompleta = await t.one(
-        `
-        SELECT p.*, 
-               COALESCE(
-                 json_agg(
-                   json_build_object(
-                     'id', so.id,
-                     'orario_inizio', so.orario_inizio,
-                     'orario_fine', so.orario_fine,
-                     'max_volontari', so.max_volontari,
-                     'stato', so.stato
-                   ) ORDER BY so.orario_inizio
-                 ) FILTER (WHERE so.id IS NOT NULL),
-                 '[]'::json
-               ) as slot_orari
-        FROM postazioni p
-        LEFT JOIN slot_orari so ON p.id = so.postazione_id
-        WHERE p.id = $1
-        GROUP BY p.id
-      `,
-        [newPostazione.id]
-      );
-
-      return postazioneCompleta;
-    });
-
-    res.status(201).json(result);
-  } catch (error) {
-    console.error("Errore nella creazione della postazione:", error);
-    res
-      .status(500)
-      .json({ message: "Errore interno del server", error: error.message });
-  }
-});
-
-// PUT /api/postazioni/:id - Aggiorna una postazione e i suoi slot
-router.put("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { error, value } = postazioneSchema.validate(req.body);
-
-    if (error) {
-      return res.status(400).json({ message: error.details[0].message });
-    }
-
-    const {
-      luogo,
-      indirizzo,
-      giorni_settimana,
-      stato,
-      max_proclamatori,
-      slot_orari,
-    } = value;
-
-    // Inizia una transazione
-    const updatedPostazione = await db.tx(async (t) => {
-      // Aggiorna la postazione
-      const postazione = await t.oneOrNone(
-        `UPDATE postazioni 
-         SET luogo = $1, indirizzo = $2, giorni_settimana = $3, stato = $4, max_proclamatori = $5, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $6
-         RETURNING *`,
-        [luogo, indirizzo, giorni_settimana, stato, max_proclamatori, id]
-      );
-
-      if (!postazione) {
-        throw new Error("Postazione non trovata");
-      }
-
-      // Ottieni gli slot orari esistenti prima di eliminarli
-      const existingSlots = await t.any(
-        "SELECT id, orario_inizio, orario_fine FROM slot_orari WHERE postazione_id = $1",
-        [id]
-      );
-
-      // Elimina tutti gli slot esistenti
-      await t.none("DELETE FROM slot_orari WHERE postazione_id = $1", [id]);
-
-      // Crea i nuovi slot
-      for (const slot of slot_orari) {
-        await t.none(
-          `INSERT INTO slot_orari (postazione_id, orario_inizio, orario_fine, max_volontari)
-           VALUES ($1, $2, $3, $4)`,
-          [id, slot.orario_inizio, slot.orario_fine, slot.max_volontari]
-        );
-      }
-
-      // Rimuovi le disponibilità per slot orari che non esistono più
-      if (existingSlots.length > 0) {
-        // Ottieni gli ID degli slot esistenti
-        const existingSlotIds = existingSlots.map((slot) => slot.id);
-
-        // Ottieni gli ID dei nuovi slot (se hanno ID) o crea temporanei
-        const newSlotIds = slot_orari.map((slot) => slot.id).filter((id) => id);
-
-        // Trova gli slot orari rimossi (quelli che esistevano ma non ci sono più)
-        const removedSlotIds = existingSlotIds.filter(
-          (oldId) => !newSlotIds.includes(oldId)
-        );
-
-        if (removedSlotIds.length > 0) {
-          // Elimina le disponibilità per gli slot rimossi
-          await t.none(
-            `DELETE FROM disponibilita 
-             WHERE slot_orario_id = ANY($1)`,
-            [removedSlotIds]
-          );
-        }
-      }
-
-      // Recupera la postazione completa con i nuovi slot
-      const postazioneCompleta = await t.one(
-        `
-        SELECT p.*, 
+    let query = `
+      SELECT p.*,
+             COALESCE(turni.turni_assegnati, 0) AS turni_assegnati,
+             COALESCE(
                json_agg(
                  json_build_object(
                    'id', so.id,
@@ -313,32 +121,198 @@ router.put("/:id", async (req, res) => {
                    'max_volontari', so.max_volontari,
                    'stato', so.stato
                  ) ORDER BY so.orario_inizio
-               ) FILTER (WHERE so.id IS NOT NULL) as slot_orari
-        FROM postazioni p
-        LEFT JOIN slot_orari so ON p.id = so.postazione_id
-        WHERE p.id = $1
-        GROUP BY p.id
-      `,
-        [id]
-      );
+               ) FILTER (WHERE so.id IS NOT NULL),
+               '[]'::json
+             ) AS slot_orari
+      FROM postazioni p
+      LEFT JOIN slot_orari so ON p.id = so.postazione_id
+      LEFT JOIN (
+        SELECT so.postazione_id, COUNT(DISTINCT a.id) AS turni_assegnati
+        FROM slot_orari so
+        LEFT JOIN assegnazioni a ON a.slot_orario_id = so.id
+        GROUP BY so.postazione_id
+      ) AS turni ON turni.postazione_id = p.id
+    `;
 
-      postazioneCompleta.slot_orari = postazioneCompleta.slot_orari || [];
-      return postazioneCompleta;
-    });
-
-    res.json(updatedPostazione);
-  } catch (error) {
-    console.error("Errore nell'aggiornamento della postazione:", error);
-    if (error.message === "Postazione non trovata") {
-      res.status(404).json({ message: "Postazione non trovata" });
-    } else {
-      res.status(500).json({ message: "Errore interno del server" });
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
     }
+
+    query += " GROUP BY p.id, turni.turni_assegnati ORDER BY p.luogo";
+
+    const rows = await db.any(query, params);
+    res.json(rows.map(formatPostazione));
+  } catch (error) {
+    console.error("Errore nel recupero delle postazioni:", error);
+    res.status(500).json({ message: "Errore interno del server" });
   }
 });
 
-// PATCH /api/postazioni/:id/toggle-stato - Cambia lo stato di una postazione
-router.patch("/:id/toggle-stato", async (req, res) => {
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const postazione = await fetchPostazioneById(id);
+
+    if (!postazione) {
+      return res.status(404).json({ message: "Postazione non trovata" });
+    }
+
+    try {
+      enforceSameCongregazione(req, postazione.congregazione_id);
+    } catch (authError) {
+      return res
+        .status(authError.statusCode || 403)
+        .json({ message: authError.message });
+    }
+
+    res.json(formatPostazione(postazione));
+  } catch (error) {
+    console.error("Errore nel recupero della postazione:", error);
+    res.status(500).json({ message: "Errore interno del server" });
+  }
+});
+
+router.post("/", authorizeRoles("admin", "super_admin"), async (req, res) => {
+  try {
+    const { error, value } = postazioneSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
+    }
+
+    const headerCongregazioneId = req.headers["x-congregazione-id"]
+      ? parseInt(req.headers["x-congregazione-id"], 10)
+      : null;
+
+    const targetCongregazioneId =
+      req.user.ruolo === "super_admin"
+        ? value.congregazione_id || headerCongregazioneId
+        : req.user.congregazione_id;
+
+    if (!targetCongregazioneId) {
+      return res
+        .status(400)
+        .json({ message: "Congregazione non specificata per la postazione" });
+    }
+
+    const { luogo, indirizzo, giorni_settimana, stato, max_proclamatori, slot_orari } = value;
+
+    const result = await db.tx(async (t) => {
+      const newPostazione = await t.one(
+        `INSERT INTO postazioni (congregazione_id, luogo, indirizzo, giorni_settimana, stato, max_proclamatori)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [targetCongregazioneId, luogo, indirizzo || null, giorni_settimana, stato, max_proclamatori]
+      );
+
+      for (const slot of slot_orari) {
+        await t.none(
+          `INSERT INTO slot_orari (postazione_id, congregazione_id, orario_inizio, orario_fine, max_volontari, stato)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            newPostazione.id,
+            targetCongregazioneId,
+            slot.orario_inizio,
+            slot.orario_fine,
+            slot.max_volontari,
+            slot.stato || "attivo",
+          ]
+        );
+      }
+
+      return newPostazione.id;
+    });
+
+    const created = await fetchPostazioneById(result);
+    res.status(201).json(formatPostazione(created));
+  } catch (error) {
+    console.error("Errore nella creazione della postazione:", error);
+    res.status(500).json({ message: "Errore interno del server" });
+  }
+});
+
+router.put("/:id", authorizeRoles("admin", "super_admin"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { error, value } = postazioneSchema.validate(req.body);
+
+    if (error) {
+      return res.status(400).json({ message: error.details[0].message });
+    }
+
+    const currentCongregazioneId = await ensureEntityAccess(req, 'postazioni', id);
+    if (!currentCongregazioneId) {
+      return res.status(404).json({ message: "Postazione non trovata" });
+    }
+
+    const headerCongregazioneId = req.headers["x-congregazione-id"]
+      ? parseInt(req.headers["x-congregazione-id"], 10)
+      : null;
+
+    const targetCongregazioneId =
+      req.user.ruolo === "super_admin"
+        ? value.congregazione_id || headerCongregazioneId || currentCongregazioneId
+        : currentCongregazioneId;
+
+    const { luogo, indirizzo, giorni_settimana, stato, max_proclamatori, slot_orari } = value;
+
+    await db.tx(async (t) => {
+      const updated = await t.oneOrNone(
+        `UPDATE postazioni
+         SET congregazione_id = $1, luogo = $2, indirizzo = $3, giorni_settimana = $4, stato = $5, max_proclamatori = $6, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $7
+         RETURNING id`,
+        [targetCongregazioneId, luogo, indirizzo || null, giorni_settimana, stato, max_proclamatori, id]
+      );
+
+      if (!updated) {
+        throw new Error("NOT_FOUND");
+      }
+
+      await t.none("DELETE FROM slot_orari WHERE postazione_id = $1", [id]);
+
+      for (const slot of slot_orari) {
+        await t.none(
+          `INSERT INTO slot_orari (postazione_id, congregazione_id, orario_inizio, orario_fine, max_volontari, stato)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            id,
+            targetCongregazioneId,
+            slot.orario_inizio,
+            slot.orario_fine,
+            slot.max_volontari,
+            slot.stato || "attivo",
+          ]
+        );
+      }
+
+      await t.none(
+        `DELETE FROM disponibilita
+         WHERE slot_orario_id IN (
+           SELECT id FROM slot_orari
+           WHERE postazione_id = $1
+         )
+         AND congregazione_id != $2`,
+        [id, targetCongregazioneId]
+      );
+    });
+
+    const updatedPostazione = await fetchPostazioneById(id);
+    res.json(formatPostazione(updatedPostazione));
+  } catch (error) {
+    if (error.message === "NOT_FOUND") {
+      return res.status(404).json({ message: "Postazione non trovata" });
+    }
+
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+
+    console.error("Errore nell'aggiornamento della postazione:", error);
+    res.status(500).json({ message: "Errore interno del server" });
+  }
+});
+
+router.patch("/:id/toggle-stato", authorizeRoles("admin", "super_admin"), async (req, res) => {
   try {
     const { id } = req.params;
     const { stato } = req.body;
@@ -347,55 +321,38 @@ router.patch("/:id/toggle-stato", async (req, res) => {
       return res.status(400).json({ message: "Stato non valido" });
     }
 
-    const postazione = await db.oneOrNone(
-      `UPDATE postazioni 
+    await ensureEntityAccess(req, 'postazioni', id);
+
+    const updated = await db.oneOrNone(
+      `UPDATE postazioni
        SET stato = $1, updated_at = CURRENT_TIMESTAMP
        WHERE id = $2
-       RETURNING *`,
+       RETURNING id`,
       [stato, id]
     );
 
-    if (!postazione) {
+    if (!updated) {
       return res.status(404).json({ message: "Postazione non trovata" });
     }
 
-    // Recupera la postazione completa con gli slot
-    const postazioneCompleta = await db.one(
-      `
-      SELECT p.*, 
-             json_agg(
-               json_build_object(
-                 'id', so.id,
-                 'orario_inizio', so.orario_inizio,
-                 'orario_fine', so.orario_fine,
-                 'max_volontari', so.max_volontari,
-                 'stato', so.stato
-               ) ORDER BY so.orario_inizio
-             ) FILTER (WHERE so.id IS NOT NULL) as slot_orari
-      FROM postazioni p
-      LEFT JOIN slot_orari so ON p.id = so.postazione_id
-      WHERE p.id = $1
-      GROUP BY p.id
-    `,
-      [id]
-    );
-
-    postazioneCompleta.slot_orari = postazioneCompleta.slot_orari || [];
-    res.json(postazioneCompleta);
+    const postazione = await fetchPostazioneById(id);
+    res.json(formatPostazione(postazione));
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+
     console.error("Errore nel cambio di stato della postazione:", error);
     res.status(500).json({ message: "Errore interno del server" });
   }
 });
 
-// DELETE /api/postazioni/:id - Elimina una postazione e tutti i suoi slot
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authorizeRoles("admin", "super_admin"), async (req, res) => {
   try {
     const { id } = req.params;
+    await ensureEntityAccess(req, 'postazioni', id);
 
-    const result = await db.result("DELETE FROM postazioni WHERE id = $1", [
-      id,
-    ]);
+    const result = await db.result("DELETE FROM postazioni WHERE id = $1", [id]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ message: "Postazione non trovata" });
@@ -403,129 +360,70 @@ router.delete("/:id", async (req, res) => {
 
     res.json({ message: "Postazione eliminata con successo" });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+
     console.error("Errore nell'eliminazione della postazione:", error);
     res.status(500).json({ message: "Errore interno del server" });
   }
 });
 
-// POST /api/postazioni/sync-disponibilita - Sincronizza disponibilità con configurazioni postazioni
-router.post("/sync-disponibilita", async (req, res) => {
+router.post("/sync-disponibilita", authorizeRoles("admin", "super_admin"), async (req, res) => {
   try {
-    // Verifica che l'utente sia admin (opzionale)
-    // if (!req.user || req.user.ruolo !== 'admin') {
-    //   return res.status(403).json({ message: "Accesso negato" });
-    // }
+    const targetCongregazioneId = await resolveCongregazioneId(req, { allowNullForSuperAdmin: false });
 
     const result = await db.tx(async (t) => {
-      // Elimina le disponibilità per giorni in cui le postazioni non sono più attive
-      const deletedCount = await t.result(`
-        DELETE FROM disponibilita 
-        WHERE id IN (
-          SELECT d.id
-          FROM disponibilita d
-          JOIN slot_orari so ON d.slot_orario_id = so.id
-          JOIN postazioni p ON so.postazione_id = p.id
-          WHERE p.stato = 'attiva'
-          AND CASE 
-            WHEN EXTRACT(DOW FROM d.data) = 0 THEN 1  -- Domenica
-            WHEN EXTRACT(DOW FROM d.data) = 1 THEN 2  -- Lunedì
-            WHEN EXTRACT(DOW FROM d.data) = 2 THEN 3  -- Martedì
-            WHEN EXTRACT(DOW FROM d.data) = 3 THEN 4  -- Mercoledì
-            WHEN EXTRACT(DOW FROM d.data) = 4 THEN 5  -- Giovedì
-            WHEN EXTRACT(DOW FROM d.data) = 5 THEN 6  -- Venerdì
-            WHEN EXTRACT(DOW FROM d.data) = 6 THEN 7  -- Sabato
-          END != ALL(p.giorni_settimana)
-        )
-      `);
+      const params = [targetCongregazioneId];
 
-      // Ottieni statistiche delle disponibilità rimanenti
-      const stats = await t.any(`
-        SELECT 
-          p.luogo,
-          p.giorni_settimana,
-          COUNT(d.id) as disponibilita_rimanenti,
-          MIN(d.data) as data_inizio,
-          MAX(d.data) as data_fine
-        FROM postazioni p
-        LEFT JOIN slot_orari so ON p.id = so.postazione_id
-        LEFT JOIN disponibilita d ON so.id = d.slot_orario_id
-        WHERE p.stato = 'attiva'
-        GROUP BY p.id, p.luogo, p.giorni_settimana
-        ORDER BY p.id
-      `);
+      const deleted = await t.result(
+        `DELETE FROM disponibilita
+         WHERE congregazione_id = $1
+           AND id IN (
+             SELECT d.id
+             FROM disponibilita d
+             JOIN slot_orari so ON d.slot_orario_id = so.id
+             JOIN postazioni p ON so.postazione_id = p.id
+             WHERE p.stato = 'attiva'
+               AND CASE
+                 WHEN EXTRACT(DOW FROM d.data) = 0 THEN 1
+                 WHEN EXTRACT(DOW FROM d.data) = 1 THEN 2
+                 WHEN EXTRACT(DOW FROM d.data) = 2 THEN 3
+                 WHEN EXTRACT(DOW FROM d.data) = 3 THEN 4
+                 WHEN EXTRACT(DOW FROM d.data) = 4 THEN 5
+                 WHEN EXTRACT(DOW FROM d.data) = 5 THEN 6
+                 WHEN EXTRACT(DOW FROM d.data) = 6 THEN 7
+               END != ALL(p.giorni_settimana)
+           )`,
+        params
+      );
 
-      return {
-        deletedCount: deletedCount.rowCount,
-        stats: stats,
-      };
+      const stats = await t.any(
+        `SELECT
+           p.luogo,
+           p.giorni_settimana,
+           COUNT(d.id) AS disponibilita_rimanenti,
+           MIN(d.data) AS data_inizio,
+           MAX(d.data) AS data_fine
+         FROM postazioni p
+         LEFT JOIN slot_orari so ON p.id = so.postazione_id
+         LEFT JOIN disponibilita d ON so.id = d.slot_orario_id
+         WHERE p.congregazione_id = $1
+         GROUP BY p.id, p.luogo, p.giorni_settimana
+         ORDER BY p.luogo`,
+        params
+      );
+
+      return { deleted: deleted.rowCount, stats };
     });
 
     res.json({
       message: "Sincronizzazione completata con successo",
-      deletedCount: result.deletedCount,
+      deletedCount: result.deleted,
       stats: result.stats,
     });
   } catch (error) {
-    console.error("Errore nella sincronizzazione:", error);
-    res.status(500).json({ message: "Errore interno del server" });
-  }
-});
-
-// POST /api/postazioni/sync-disponibilita - Sincronizza disponibilità con configurazioni postazioni
-router.post("/sync-disponibilita", async (req, res) => {
-  try {
-    // Esegui la sincronizzazione
-    const result = await db.tx(async (t) => {
-      // Elimina le disponibilità per giorni in cui le postazioni non sono più attive
-      const deletedCount = await t.result(`
-        DELETE FROM disponibilita 
-        WHERE id IN (
-          SELECT d.id
-          FROM disponibilita d
-          JOIN slot_orari so ON d.slot_orario_id = so.id
-          JOIN postazioni p ON so.postazione_id = p.id
-          WHERE p.stato = 'attiva'
-          AND CASE 
-            WHEN EXTRACT(DOW FROM d.data) = 0 THEN 1  -- Domenica
-            WHEN EXTRACT(DOW FROM d.data) = 1 THEN 2  -- Lunedì
-            WHEN EXTRACT(DOW FROM d.data) = 2 THEN 3  -- Martedì
-            WHEN EXTRACT(DOW FROM d.data) = 3 THEN 4  -- Mercoledì
-            WHEN EXTRACT(DOW FROM d.data) = 4 THEN 5  -- Giovedì
-            WHEN EXTRACT(DOW FROM d.data) = 5 THEN 6  -- Venerdì
-            WHEN EXTRACT(DOW FROM d.data) = 6 THEN 7  -- Sabato
-          END != ALL(p.giorni_settimana)
-        )
-      `);
-
-      // Ottieni statistiche post-sincronizzazione
-      const stats = await t.any(`
-        SELECT 
-          p.luogo,
-          p.giorni_settimana,
-          COUNT(d.id) as disponibilita_rimanenti,
-          MIN(d.data) as data_inizio,
-          MAX(d.data) as data_fine
-        FROM postazioni p
-        LEFT JOIN slot_orari so ON p.id = so.postazione_id
-        LEFT JOIN disponibilita d ON so.id = d.slot_orario_id
-        WHERE p.stato = 'attiva'
-        GROUP BY p.id, p.luogo, p.giorni_settimana
-        ORDER BY p.id
-      `);
-
-      return {
-        deletedCount: deletedCount.rowCount,
-        stats: stats,
-      };
-    });
-
-    res.json({
-      message: "Sincronizzazione completata con successo",
-      deletedCount: result.deletedCount,
-      stats: result.stats,
-    });
-  } catch (error) {
-    console.error("Errore nella sincronizzazione:", error);
+    console.error("Errore nella sincronizzazione delle disponibilità:", error);
     res.status(500).json({ message: "Errore interno del server" });
   }
 });

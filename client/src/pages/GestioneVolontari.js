@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import axios from "axios";
 import { api } from "../utils/api";
 import toast from "react-hot-toast";
 import {
@@ -13,7 +12,7 @@ import {
 } from "@heroicons/react/24/outline";
 
 const GestioneVolontari = () => {
-  const { user } = useAuth();
+  const { user, activeCongregazione } = useAuth();
   const [allVolontari, setAllVolontari] = useState([]); // Tutti i volontari dal server
   const [filteredVolontari, setFilteredVolontari] = useState([]); // Volontari filtrati
   const [loading, setLoading] = useState(true);
@@ -48,13 +47,30 @@ const GestioneVolontari = () => {
   });
 
   // Controllo autorizzazione - spostato dopo gli hooks
-  const isAuthorized = user?.ruolo === "admin";
+  const isAuthorized =
+    user?.ruolo === "admin" || user?.ruolo === "super_admin";
+
+  const requireCongregazioneSelezionata = useCallback(() => {
+    if (user?.ruolo === "super_admin" && !activeCongregazione?.id) {
+      toast.error(
+        "Seleziona una congregazione attiva dalla pagina Congregazioni per continuare."
+      );
+      return false;
+    }
+    return true;
+  }, [user, activeCongregazione]);
 
   const fetchVolontari = useCallback(async () => {
     try {
+      if (!requireCongregazioneSelezionata()) {
+        setAllVolontari([]);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       // Richiedi tutti i volontari senza paginazione per le statistiche
-      const response = await axios.get(`/volontari?limit=1000`);
+      const response = await api.get(`/volontari?limit=1000`);
 
       if (response.data.volontari) {
         setAllVolontari(response.data.volontari);
@@ -67,7 +83,7 @@ const GestioneVolontari = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [requireCongregazioneSelezionata]);
 
   useEffect(() => {
     fetchVolontari();
@@ -182,6 +198,10 @@ const GestioneVolontari = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!requireCongregazioneSelezionata()) {
+      return;
+    }
+
     // Validazione password per nuovi volontari
     if (!editingVolontario) {
       if (formData.password.length < 6) {
@@ -212,13 +232,25 @@ const GestioneVolontari = () => {
           delete updateData.password;
         }
         delete updateData.confermaPassword; // Rimuovi sempre confermaPassword
-        await axios.put(`/volontari/${editingVolontario.id}`, updateData);
+        if (user?.ruolo === "super_admin" && activeCongregazione?.id) {
+          updateData.congregazione_id = activeCongregazione.id;
+        }
+        await api.put(`/volontari/${editingVolontario.id}`, updateData);
         toast.success("Volontario aggiornato con successo");
       } else {
         // Crea nuovo volontario
         const createData = { ...formData };
         delete createData.confermaPassword; // Rimuovi confermaPassword
-        await axios.post("/volontari", createData);
+        if (user?.ruolo === "super_admin") {
+          if (!activeCongregazione?.id) {
+            toast.error(
+              "Seleziona una congregazione attiva prima di creare un volontario."
+            );
+            return;
+          }
+          createData.congregazione_id = activeCongregazione.id;
+        }
+        await api.post("/volontari", createData);
         toast.success("Volontario creato con successo");
       }
 
@@ -240,6 +272,10 @@ const GestioneVolontari = () => {
   };
 
   const handleDelete = async (volontarioId) => {
+    if (!requireCongregazioneSelezionata()) {
+      return;
+    }
+
     // Trova il volontario da eliminare
     const volontarioToDelete = (allVolontari || []).find(
       (v) => v.id === volontarioId
@@ -267,7 +303,7 @@ const GestioneVolontari = () => {
     setAllVolontari(updatedVolontari);
 
     try {
-      await axios.delete(`/volontari/${volontarioId}`);
+      await api.delete(`/volontari/${volontarioId}`);
       toast.success("Volontario eliminato con successo");
 
       // Aggiorna la lista solo se necessario
@@ -297,6 +333,10 @@ const GestioneVolontari = () => {
 
   // Funzione per gestire l'export
   const handleExport = async (format) => {
+    if (!requireCongregazioneSelezionata()) {
+      return;
+    }
+
     try {
       const response = await api.get(`/volontari/export/${format}`, {
         responseType: 'blob'
@@ -329,8 +369,15 @@ const GestioneVolontari = () => {
       return;
     }
 
+    if (!requireCongregazioneSelezionata()) {
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', importFile);
+    if (user?.ruolo === 'super_admin' && activeCongregazione?.id) {
+      formData.append('congregazione_id', activeCongregazione.id);
+    }
 
     setImporting(true);
     try {

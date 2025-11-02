@@ -11,7 +11,7 @@ import {
 } from "@heroicons/react/24/outline";
 
 const GestionePostazioni = () => {
-  const { user: _user } = useAuth();
+  const { user, activeCongregazione } = useAuth();
   const [postazioni, setPostazioni] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -24,13 +24,35 @@ const GestionePostazioni = () => {
     giorni_settimana: [],
   });
 
+  const requireCongregazioneSelezionata = () => {
+    if (user?.ruolo === "super_admin" && !activeCongregazione?.id) {
+      toast.error(
+        "Seleziona una congregazione attiva dalla pagina Congregazioni per continuare."
+      );
+      return false;
+    }
+    return true;
+  };
+
   useEffect(() => {
     const loadPostazioni = async () => {
+      if (!requireCongregazioneSelezionata()) {
+        setPostazioni([]);
+        setLoading(false);
+        return;
+      }
+
       try {
+        const headers = {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        };
+
+        if (activeCongregazione?.id) {
+          headers["X-Congregazione-Id"] = activeCongregazione.id;
+        }
+
         const response = await fetch("/api/postazioni", {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
+          headers,
         });
 
         if (response.ok) {
@@ -55,7 +77,7 @@ const GestionePostazioni = () => {
     };
 
     loadPostazioni();
-  }, []);
+  }, [activeCongregazione]);
 
   // Popola il form quando si seleziona una postazione per la modifica
   useEffect(() => {
@@ -159,12 +181,17 @@ const GestionePostazioni = () => {
     }
 
     try {
-      const response = await fetch(`/api/postazioni/${postazioneId}`, {
-        method: "DELETE",
-        headers: {
+        const headers = {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      });
+        };
+        if (activeCongregazione?.id) {
+          headers["X-Congregazione-Id"] = activeCongregazione.id;
+        }
+
+        const response = await fetch(`/api/postazioni/${postazioneId}`, {
+          method: "DELETE",
+          headers,
+        });
 
       if (response.ok) {
         setPostazioni((prev) => prev.filter((p) => p.id !== postazioneId));
@@ -196,14 +223,23 @@ const GestionePostazioni = () => {
     }
 
     try {
+      if (!requireCongregazioneSelezionata()) {
+        return;
+      }
+
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token")}`,
+      };
+      if (activeCongregazione?.id) {
+        headers["X-Congregazione-Id"] = activeCongregazione.id;
+      }
+
       const response = await fetch(
         `/api/postazioni/${postazioneId}/toggle-stato`,
         {
           method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
+          headers,
           body: JSON.stringify({ stato: newStato }),
         }
       );
@@ -239,11 +275,24 @@ const GestionePostazioni = () => {
       )
     ) {
       try {
+        if (!requireCongregazioneSelezionata()) {
+          return;
+        }
+
+        const headers = {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        };
+        if (activeCongregazione?.id) {
+          headers["X-Congregazione-Id"] = activeCongregazione.id;
+        }
+
         const response = await fetch("/api/postazioni/sync-disponibilita", {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
+          headers,
+          body: JSON.stringify({
+            congregazione_id: activeCongregazione?.id,
+          }),
         });
 
         if (response.ok) {
@@ -306,6 +355,10 @@ const GestionePostazioni = () => {
     }
 
     try {
+      if (!requireCongregazioneSelezionata()) {
+        return;
+      }
+
       const postazioneData = {
         luogo: formData.luogo.trim(),
         indirizzo: formData.indirizzo.trim(),
@@ -319,18 +372,27 @@ const GestionePostazioni = () => {
         })),
       };
 
+      if (user?.ruolo === "super_admin" && activeCongregazione?.id) {
+        postazioneData.congregazione_id = activeCongregazione.id;
+      }
+
       const isEditing = editingPostazione !== null;
       const url = isEditing
         ? `/api/postazioni/${editingPostazione.id}`
         : "/api/postazioni";
       const method = isEditing ? "PUT" : "POST";
 
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("token")}`,
+      };
+      if (activeCongregazione?.id) {
+        headers["X-Congregazione-Id"] = activeCongregazione.id;
+      }
+
       const response = await fetch(url, {
         method: method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
+        headers,
         body: JSON.stringify(postazioneData),
       });
 

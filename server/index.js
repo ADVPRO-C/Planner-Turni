@@ -11,6 +11,7 @@ const disponibilitaRoutes = require("./routes/disponibilita");
 const turniRoutes = require("./routes/turni");
 const cronologiaRoutes = require("./routes/cronologia");
 const assistenzaRoutes = require("./routes/assistenza");
+const congregazioniRoutes = require("./routes/congregazioni");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -46,6 +47,8 @@ app.use("/api/cronologia", cronologiaRoutes);
 console.log("✓ Route cronologia caricate");
 app.use("/api/assistenza", assistenzaRoutes);
 console.log("✓ Route assistenza caricate");
+app.use("/api/congregazioni", congregazioniRoutes);
+console.log("✓ Route congregazioni caricate");
 
 // Route di test
 app.get("/api/health", (req, res) => {
