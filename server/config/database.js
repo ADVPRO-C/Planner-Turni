@@ -1,4 +1,10 @@
+const dns = require("dns");
 const pgp = require("pg-promise")();
+
+// Forza la preferenza IPv4 in ambienti che forniscono solo record AAAA (es. Railway)
+if (typeof dns.setDefaultResultOrder === "function") {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 // Configurazione del database
 // Supporta sia DATABASE_URL (connection string) che variabili separate
@@ -6,10 +12,31 @@ let config;
 
 // Debug: verifica se DATABASE_URL è presente
 if (process.env.DATABASE_URL) {
-  console.log("✅ DATABASE_URL trovata, usando connection string");
-  // Usa la connection string (es. Supabase, Railway, Heroku)
-  // pg-promise accetta direttamente la connection string
-  config = process.env.DATABASE_URL;
+  console.log("✅ DATABASE_URL trovata, uso connection string");
+
+  const requiresSSL =
+    process.env.DB_SSL === "true" || process.env.NODE_ENV === "production";
+
+  config = {
+    connectionString: process.env.DATABASE_URL,
+    ssl: requiresSSL ? { rejectUnauthorized: false } : false,
+    max: parseInt(process.env.DB_POOL_MAX || "10", 10),
+    idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || "30000", 10),
+    connectionTimeoutMillis: parseInt(
+      process.env.DB_CONNECTION_TIMEOUT || "10000",
+      10
+    ),
+    lookup: (hostname, options, callback) =>
+      dns.lookup(
+        hostname,
+        {
+          ...options,
+          family: 4,
+          hints: dns.ADDRCONFIG | dns.V4MAPPED,
+        },
+        callback
+      ),
+  };
 } else {
   console.warn(
     "⚠️ DATABASE_URL non trovata, usando variabili separate o default"
@@ -31,6 +58,22 @@ if (process.env.DATABASE_URL) {
       process.env.NODE_ENV === "production" || process.env.DB_SSL === "true"
         ? { rejectUnauthorized: false }
         : false,
+    max: parseInt(process.env.DB_POOL_MAX || "10", 10),
+    idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || "30000", 10),
+    connectionTimeoutMillis: parseInt(
+      process.env.DB_CONNECTION_TIMEOUT || "10000",
+      10
+    ),
+    lookup: (hostname, options, callback) =>
+      dns.lookup(
+        hostname,
+        {
+          ...options,
+          family: 4,
+          hints: dns.ADDRCONFIG | dns.V4MAPPED,
+        },
+        callback
+      ),
   };
 }
 

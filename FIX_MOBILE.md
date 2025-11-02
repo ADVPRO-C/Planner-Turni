@@ -1,14 +1,17 @@
 # 🔧 Fix Problema Mobile - Configurazione Necessaria
 
 ## 🐛 Problema
+
 L'app funziona su PC ma non su mobile.
 
 ## 🔍 Cause Identificate
 
 1. **CORS non configurato correttamente per mobile**
+
    - ✅ **RISOLTO**: Backend ora accetta tutte le origini in produzione
 
 2. **REACT_APP_API_URL non configurato su Vercel**
+
    - ⚠️ **DA CONFIGURARE**: Questa è la causa principale!
 
 3. **Helmet bloccava alcune richieste**
@@ -17,12 +20,15 @@ L'app funziona su PC ma non su mobile.
 ## ✅ Fix Applicati
 
 ### 1. CORS Aggiornato (Backend)
+
 Il backend ora accetta richieste da qualsiasi origine in produzione, permettendo l'accesso da mobile.
 
 ### 2. Helmet Configurato (Backend)
+
 Helmet è stato configurato per non bloccare le richieste cross-origin in produzione.
 
 ### 3. Logging Aggiunto (Frontend)
+
 Il frontend ora logga l'URL API utilizzato per debug.
 
 ## 📋 CONFIGURAZIONE NECESSARIA SU VERCEL
@@ -49,7 +55,7 @@ Il frontend ora logga l'URL API utilizzato per debug.
      - ⚠️ **IMPORTANTE**: Aggiungi `/api` alla fine!
    - **Environment**: Seleziona tutte e tre:
      - ✅ Production
-     - ✅ Preview  
+     - ✅ Preview
      - ✅ Development (opzionale, se vuoi testare)
 7. Clicca **"Save"** (Salva)
 
@@ -67,12 +73,13 @@ Il frontend ora logga l'URL API utilizzato per debug.
 1. **Su PC**: Apri l'app deployata su Vercel
 2. Apri la **Console del Browser** (F12 → Console)
 3. Dovresti vedere:
+
    ```
    🔗 API Base URL configurato: https://tuo-backend-url.up.railway.app/api
    🔍 REACT_APP_API_URL env: https://tuo-backend-url.up.railway.app/api
    ```
 
-4. **Su Mobile**: 
+4. **Su Mobile**:
    - Apri l'app dal browser mobile
    - Se hai accesso agli strumenti sviluppatore mobile, verifica che non ci siano errori CORS
    - L'app dovrebbe funzionare correttamente
@@ -80,17 +87,21 @@ Il frontend ora logga l'URL API utilizzato per debug.
 ## 🧪 Test Rapido
 
 ### Test Backend (Railway)
+
 Apri nel browser (anche da mobile):
+
 ```
 https://tuo-backend-url.up.railway.app/api/health
 ```
 
 Dovresti vedere:
+
 ```json
-{"status":"OK","message":"Server funzionante"}
+{ "status": "OK", "message": "Server funzionante" }
 ```
 
 ### Test Frontend (Vercel)
+
 1. Apri l'app deployata su Vercel
 2. Prova a fare login
 3. Se funziona, il problema è risolto! ✅
@@ -98,16 +109,19 @@ Dovresti vedere:
 ## ❌ Se Non Funziona Ancora
 
 ### Verifica 1: REACT_APP_API_URL è configurato?
+
 1. Vai su Vercel → Settings → Environment Variables
 2. Verifica che `REACT_APP_API_URL` esista e abbia il valore corretto
 3. **Deve essere**: `https://tuo-backend-url.up.railway.app/api` (con `/api` alla fine!)
 
 ### Verifica 2: Redeploy Eseguito?
+
 1. Vai su Deployments
 2. Verifica che ci sia un deployment recente (dopo aver aggiunto la variabile)
 3. Se non c'è, esegui un Redeploy
 
 ### Verifica 3: Console Browser
+
 1. Apri la console del browser (anche su mobile se possibile)
 2. Cerca errori tipo:
    - `CORS policy`
@@ -116,12 +130,14 @@ Dovresti vedere:
 3. Se vedi errori, condividili per debug
 
 ### Verifica 4: Backend Accessibile?
+
 1. Da mobile, prova ad aprire: `https://tuo-backend-url.up.railway.app/api/health`
 2. Se non si apre, il backend potrebbe essere down o l'URL sbagliato
 
 ## 📱 Nota per Mobile
 
 Quando accedi da mobile:
+
 - **Non funzionerà** se usi `localhost` (il mobile non può accedere al localhost del PC)
 - **Funzionerà** solo se `REACT_APP_API_URL` punta all'URL pubblico di Railway
 - Il backend Railway deve essere **pubblicamente accessibile** (non solo da localhost)
@@ -143,4 +159,3 @@ Quando accedi da mobile:
 ---
 
 **Dopo aver configurato `REACT_APP_API_URL` su Vercel e fatto il redeploy, l'app dovrebbe funzionare anche da mobile!** 🎉
-
