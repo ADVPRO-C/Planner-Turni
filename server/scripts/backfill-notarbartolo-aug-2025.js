@@ -14,8 +14,9 @@ async function generateDateStringsInRangeInclusive(startDateStr, endDateStr) {
 }
 
 function jsDayToDbDayNumber(jsDay) {
-  // JS: 0=Sun..6=Sat -> DB convention used in project: 1=Sun..7=Sat
-  return jsDay === 0 ? 1 : jsDay + 1;
+  // JS: 0=Sun, 1=Mon, ..., 6=Sat -> DB convention used in project: 1=Mon, 2=Tue, ..., 7=Sun
+  // Converti JavaScript getDay() al formato del database (1=Lunedì, ..., 7=Domenica)
+  return jsDay === 0 ? 7 : jsDay;
 }
 
 async function backfillNotarbartoloAugust2025() {

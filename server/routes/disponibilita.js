@@ -249,7 +249,15 @@ router.get("/postazione/:id", async (req, res) => {
         AND d.stato = 'disponibile'
         AND d.congregazione_id = $1
         AND so.postazione_id = $2
-        AND EXTRACT(DOW FROM d.data) = ANY($3)
+        AND CASE 
+          WHEN EXTRACT(DOW FROM d.data) = 0 THEN 7
+          WHEN EXTRACT(DOW FROM d.data) = 1 THEN 1
+          WHEN EXTRACT(DOW FROM d.data) = 2 THEN 2
+          WHEN EXTRACT(DOW FROM d.data) = 3 THEN 3
+          WHEN EXTRACT(DOW FROM d.data) = 4 THEN 4
+          WHEN EXTRACT(DOW FROM d.data) = 5 THEN 5
+          WHEN EXTRACT(DOW FROM d.data) = 6 THEN 6
+        END = ANY($3)
     `;
     const params = [postazione.congregazione_id, postazioneId, postazione.giorni_settimana];
     let paramIndex = 4;
@@ -325,11 +333,11 @@ router.get("/riepilogo", async (req, res) => {
         so.orario_fine,
         p.luogo as postazione,
         p.id as postazione_id,
-        COUNT(d.volontario_id) as totale_disponibili,
-        COUNT(CASE WHEN v.sesso = 'M' THEN 1 END) as uomini,
-        COUNT(CASE WHEN v.sesso = 'F' THEN 1 END) as donne,
+        COUNT(DISTINCT d.volontario_id) as totale_disponibili,
+        COUNT(DISTINCT CASE WHEN v.sesso = 'M' THEN d.volontario_id END) as uomini,
+        COUNT(DISTINCT CASE WHEN v.sesso = 'F' THEN d.volontario_id END) as donne,
         so.max_volontari,
-        CASE WHEN a.id IS NOT NULL THEN true ELSE false END as assegnato
+        BOOL_OR(a.id IS NOT NULL) as assegnato
       FROM disponibilita d
       JOIN volontari v ON d.volontario_id = v.id
       JOIN slot_orari so ON d.slot_orario_id = so.id
@@ -348,6 +356,16 @@ router.get("/riepilogo", async (req, res) => {
       params.push(filterCongregazioneId);
     }
 
+    query += ` AND CASE
+        WHEN EXTRACT(DOW FROM d.data) = 0 THEN 7
+        WHEN EXTRACT(DOW FROM d.data) = 1 THEN 1
+        WHEN EXTRACT(DOW FROM d.data) = 2 THEN 2
+        WHEN EXTRACT(DOW FROM d.data) = 3 THEN 3
+        WHEN EXTRACT(DOW FROM d.data) = 4 THEN 4
+        WHEN EXTRACT(DOW FROM d.data) = 5 THEN 5
+        WHEN EXTRACT(DOW FROM d.data) = 6 THEN 6
+      END = ANY(p.giorni_settimana)`;
+
     if (data_inizio) {
       query += ` AND d.data >= $${paramIndex++}`;
       params.push(data_inizio);
@@ -359,18 +377,46 @@ router.get("/riepilogo", async (req, res) => {
     }
 
     query += `
-      GROUP BY d.data, so.orario_inizio, so.orario_fine, p.luogo, p.id, so.max_volontari, a.id
+      GROUP BY d.data, so.orario_inizio, so.orario_fine, p.luogo, p.id, so.max_volontari
       ORDER BY d.data, so.orario_inizio, p.luogo
     `;
 
     const riepilogo = await db.any(query, params);
 
-    // Aggiungi flag di attenzione per postazioni senza uomini
-    const riepilogoConFlag = riepilogo.map((item) => ({
-      ...item,
-      attenzione: item.uomini === 0,
-      sufficiente: item.uomini >= 1,
-    }));
+    // Calcola lo stato dello slot basato su disponibilità e requisiti
+    const riepilogoConFlag = riepilogo.map((item) => {
+      const totaleDisponibili = parseInt(item.totale_disponibili) || 0;
+      const uominiDisponibili = parseInt(item.uomini) || 0;
+      const maxVolontari = parseInt(item.max_volontari) || 1;
+
+      // Determina lo stato:
+      // - "critico" (rosso): non ci sono abbastanza disponibili (totale < max)
+      // - "attenzione" (giallo): abbastanza disponibili (totale >= max) ma senza uomini
+      // - "sufficiente" (verde): abbastanza disponibili (totale >= max) E almeno 1 uomo
+      
+      let stato = "sufficiente"; // default verde
+      let critico = false;
+      let attenzione = false;
+
+      if (totaleDisponibili < maxVolontari) {
+        // Non ci sono abbastanza persone disponibili: CRITICO
+        stato = "critico";
+        critico = true;
+      } else if (uominiDisponibili === 0) {
+        // Ci sono abbastanza persone ma nessun uomo: ATTENZIONE
+        stato = "attenzione";
+        attenzione = true;
+      }
+      // Altrimenti: abbastanza persone E almeno 1 uomo = sufficiente (default)
+
+      return {
+        ...item,
+        stato,
+        critico,
+        attenzione,
+        sufficiente: !critico && !attenzione,
+      };
+    });
 
     res.json(riepilogoConFlag);
   } catch (error) {

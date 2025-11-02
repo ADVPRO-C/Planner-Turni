@@ -133,6 +133,134 @@ router.get("/", async (req, res) => {
   }
 });
 
+// GET /api/turni/miei-turni - Ottieni i prossimi turni dell'utente corrente
+// IMPORTANTE: lasciare questa route PRIMA di "/:id" per evitare conflitti
+router.get("/miei-turni", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data_inizio, data_fine } = req.query;
+
+    const oggi = new Date();
+    oggi.setHours(0, 0, 0, 0);
+
+    const dataInizio = data_inizio || oggi.toISOString().split("T")[0];
+    const dataFine = data_fine || new Date(oggi.getTime() + 90 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+
+    const requestedCongregazione = await resolveCongregazioneId(req, {
+      allowNullForSuperAdmin: true,
+    });
+
+    const effectiveCongregazioneId =
+      requestedCongregazione ??
+      (req.user.ruolo === "super_admin" ? null : req.user.congregazione_id);
+
+    if (!effectiveCongregazioneId && req.user.ruolo !== "super_admin") {
+      return res.status(400).json({
+        message: "Congregazione non specificata. Seleziona una congregazione attiva.",
+      });
+    }
+
+    // Query per ottenere i turni dell'utente con dettagli postazione e compagni
+    // Filtra solo i turni nei giorni validi per la postazione
+    const query = `
+      WITH turni_utente AS (
+        SELECT DISTINCT a.id AS assegnazione_id
+        FROM assegnazioni a
+        JOIN assegnazioni_volontari av ON a.id = av.assegnazione_id
+        JOIN postazioni p ON a.postazione_id = p.id
+        WHERE a.stato IN ('assegnato', 'completato')
+          AND a.data_turno >= $1::date
+          AND a.data_turno <= $2::date
+          AND av.volontario_id = $3
+          ${effectiveCongregazioneId ? 'AND a.congregazione_id = $4' : ''}
+          AND p.stato = 'attiva'
+          AND CASE 
+            WHEN EXTRACT(DOW FROM a.data_turno) = 0 THEN 7
+            WHEN EXTRACT(DOW FROM a.data_turno) = 1 THEN 1
+            WHEN EXTRACT(DOW FROM a.data_turno) = 2 THEN 2
+            WHEN EXTRACT(DOW FROM a.data_turno) = 3 THEN 3
+            WHEN EXTRACT(DOW FROM a.data_turno) = 4 THEN 4
+            WHEN EXTRACT(DOW FROM a.data_turno) = 5 THEN 5
+            WHEN EXTRACT(DOW FROM a.data_turno) = 6 THEN 6
+          END = ANY(p.giorni_settimana)
+      )
+      SELECT
+        a.id AS assegnazione_id,
+        a.data_turno,
+        a.stato,
+        p.luogo AS postazione_luogo,
+        p.indirizzo AS postazione_indirizzo,
+        so.orario_inizio,
+        so.orario_fine,
+        COALESCE(
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id', v.id,
+                'nome', v.nome,
+                'cognome', v.cognome,
+                'telefono', v.telefono,
+                'email', v.email,
+                'sesso', v.sesso
+              ) ORDER BY v.cognome, v.nome
+            )
+            FROM assegnazioni_volontari av
+            JOIN volontari v ON av.volontario_id = v.id
+            WHERE av.assegnazione_id = a.id
+              AND v.id != $3
+          ),
+          '[]'::json
+        ) AS compagni
+      FROM assegnazioni a
+      JOIN turni_utente tu ON a.id = tu.assegnazione_id
+      JOIN postazioni p ON a.postazione_id = p.id
+      JOIN slot_orari so ON a.slot_orario_id = so.id
+      ORDER BY a.data_turno ASC, so.orario_inizio ASC
+    `;
+
+    const params = [dataInizio, dataFine, userId];
+    if (effectiveCongregazioneId) {
+      params.push(effectiveCongregazioneId);
+    }
+
+    const turni = await db.any(query, params);
+
+    const turniFormattati = turni.map((turno) => {
+      const compagni = Array.isArray(turno.compagni) ? turno.compagni : [];
+
+      return {
+        id: turno.assegnazione_id,
+        data_turno: turno.data_turno,
+        stato: turno.stato,
+        postazione: {
+          luogo: turno.postazione_luogo,
+          indirizzo: turno.postazione_indirizzo,
+        },
+        orario: {
+          inizio: turno.orario_inizio,
+          fine: turno.orario_fine,
+        },
+        compagni: compagni.map((c) => ({
+          id: c.id,
+          nome: c.nome,
+          cognome: c.cognome,
+          nome_completo: `${c.nome} ${c.cognome}`,
+          telefono: c.telefono,
+          email: c.email,
+          sesso: c.sesso,
+        })),
+      };
+    });
+
+    res.json(turniFormattati);
+  } catch (error) {
+    console.error("Errore nel recupero dei turni dell'utente:", error);
+    res.status(500).json({ message: "Errore interno del server" });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const turnoId = parseInt(req.params.id, 10);
@@ -1105,13 +1233,13 @@ router.get(
           AND so.stato = 'attivo'
           AND d.congregazione_id = $3
           AND CASE 
-            WHEN EXTRACT(DOW FROM d.data) = 0 THEN 1
-            WHEN EXTRACT(DOW FROM d.data) = 1 THEN 2
-            WHEN EXTRACT(DOW FROM d.data) = 2 THEN 3
-            WHEN EXTRACT(DOW FROM d.data) = 3 THEN 4
-            WHEN EXTRACT(DOW FROM d.data) = 4 THEN 5
-            WHEN EXTRACT(DOW FROM d.data) = 5 THEN 6
-            WHEN EXTRACT(DOW FROM d.data) = 6 THEN 7
+            WHEN EXTRACT(DOW FROM d.data) = 0 THEN 7
+            WHEN EXTRACT(DOW FROM d.data) = 1 THEN 1
+            WHEN EXTRACT(DOW FROM d.data) = 2 THEN 2
+            WHEN EXTRACT(DOW FROM d.data) = 3 THEN 3
+            WHEN EXTRACT(DOW FROM d.data) = 4 THEN 4
+            WHEN EXTRACT(DOW FROM d.data) = 5 THEN 5
+            WHEN EXTRACT(DOW FROM d.data) = 6 THEN 6
           END = ANY(p.giorni_settimana)
       `;
 
@@ -1144,13 +1272,13 @@ router.get(
             AND so.stato = 'attivo'
             AND p.congregazione_id = $3
             AND CASE 
-              WHEN EXTRACT(DOW FROM d) = 0 THEN 1
-              WHEN EXTRACT(DOW FROM d) = 1 THEN 2
-              WHEN EXTRACT(DOW FROM d) = 2 THEN 3
-              WHEN EXTRACT(DOW FROM d) = 3 THEN 4
-              WHEN EXTRACT(DOW FROM d) = 4 THEN 5
-              WHEN EXTRACT(DOW FROM d) = 5 THEN 6
-              WHEN EXTRACT(DOW FROM d) = 6 THEN 7
+              WHEN EXTRACT(DOW FROM d) = 0 THEN 7
+              WHEN EXTRACT(DOW FROM d) = 1 THEN 1
+              WHEN EXTRACT(DOW FROM d) = 2 THEN 2
+              WHEN EXTRACT(DOW FROM d) = 3 THEN 3
+              WHEN EXTRACT(DOW FROM d) = 4 THEN 4
+              WHEN EXTRACT(DOW FROM d) = 5 THEN 5
+              WHEN EXTRACT(DOW FROM d) = 6 THEN 6
             END = ANY(p.giorni_settimana)
         )
         ORDER BY data

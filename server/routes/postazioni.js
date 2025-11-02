@@ -386,13 +386,13 @@ router.post("/sync-disponibilita", authorizeRoles("admin", "super_admin"), async
              JOIN postazioni p ON so.postazione_id = p.id
              WHERE p.stato = 'attiva'
                AND CASE
-                 WHEN EXTRACT(DOW FROM d.data) = 0 THEN 1
-                 WHEN EXTRACT(DOW FROM d.data) = 1 THEN 2
-                 WHEN EXTRACT(DOW FROM d.data) = 2 THEN 3
-                 WHEN EXTRACT(DOW FROM d.data) = 3 THEN 4
-                 WHEN EXTRACT(DOW FROM d.data) = 4 THEN 5
-                 WHEN EXTRACT(DOW FROM d.data) = 5 THEN 6
-                 WHEN EXTRACT(DOW FROM d.data) = 6 THEN 7
+                 WHEN EXTRACT(DOW FROM d.data) = 0 THEN 7
+                 WHEN EXTRACT(DOW FROM d.data) = 1 THEN 1
+                 WHEN EXTRACT(DOW FROM d.data) = 2 THEN 2
+                 WHEN EXTRACT(DOW FROM d.data) = 3 THEN 3
+                 WHEN EXTRACT(DOW FROM d.data) = 4 THEN 4
+                 WHEN EXTRACT(DOW FROM d.data) = 5 THEN 5
+                 WHEN EXTRACT(DOW FROM d.data) = 6 THEN 6
                END != ALL(p.giorni_settimana)
            )`,
         params

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { api } from "../utils/api";
 import toast from "react-hot-toast";
 import {
   CalendarIcon,
@@ -25,24 +26,17 @@ const RiepilogoDisponibilita = () => {
   const loadRiepilogo = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/disponibilita/riepilogo?data_inizio=${filterDate.inizio}&data_fine=${filterDate.fine}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }
+      const response = await api.get(
+        `/disponibilita/riepilogo?data_inizio=${filterDate.inizio}&data_fine=${filterDate.fine}`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        setRiepilogo(data);
-      } else {
-        toast.error("Errore nel caricamento del riepilogo");
-      }
+      setRiepilogo(response.data);
     } catch (error) {
       console.error("Errore:", error);
-      toast.error("Errore di connessione");
+      if (error.response?.status === 401) {
+        toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
+      } else {
+        toast.error(error.response?.data?.message || "Errore nel caricamento del riepilogo");
+      }
     } finally {
       setLoading(false);
     }
@@ -52,9 +46,9 @@ const RiepilogoDisponibilita = () => {
     loadRiepilogo();
   }, [loadRiepilogo]);
 
-  // Filtra i risultati per mostrare solo quelli con attenzione
+  // Filtra i risultati per mostrare solo quelli critici o con attenzione
   const filteredRiepilogo = showAttentionOnly
-    ? riepilogo.filter((item) => item.attenzione)
+    ? riepilogo.filter((item) => item.critico || item.attenzione)
     : riepilogo;
 
   // Raggruppa per data
@@ -90,7 +84,8 @@ const RiepilogoDisponibilita = () => {
   // Calcola statistiche
   const stats = {
     total: riepilogo.length,
-    attention: riepilogo.filter((item) => item.attenzione).length,
+    critico: riepilogo.filter((item) => item.critico).length,
+    attention: riepilogo.filter((item) => item.attenzione && !item.critico).length,
     sufficient: riepilogo.filter((item) => item.sufficiente).length,
   };
 
@@ -169,7 +164,7 @@ const RiepilogoDisponibilita = () => {
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-500">Critici</p>
               <p className="text-2xl font-bold text-gray-900">
-                {stats.total - stats.sufficient}
+                {stats.critico}
               </p>
             </div>
           </div>
@@ -214,7 +209,7 @@ const RiepilogoDisponibilita = () => {
                 className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               />
               <span className="ml-2 text-sm text-gray-700">
-                Mostra solo slot con attenzione
+                Mostra solo slot critici o con attenzione
               </span>
             </label>
           </div>
@@ -244,14 +239,26 @@ const RiepilogoDisponibilita = () => {
                     </h4>
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {items.map((item, index) => (
+                    {items.map((item, index) => {
+                      // Determina il colore e l'icona in base allo stato
+                      let cardClasses = "";
+                      let iconComponent = null;
+                      
+                      if (item.critico) {
+                        cardClasses = "border-red-300 bg-red-50";
+                        iconComponent = <XCircleIcon className="h-5 w-5 text-red-600" />;
+                      } else if (item.attenzione) {
+                        cardClasses = "border-yellow-300 bg-yellow-50";
+                        iconComponent = <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600" />;
+                      } else {
+                        cardClasses = "border-green-300 bg-green-50";
+                        iconComponent = <CheckCircleIcon className="h-5 w-5 text-green-600" />;
+                      }
+
+                      return (
                       <div
                         key={index}
-                        className={`border rounded-lg p-4 ${
-                          item.attenzione
-                            ? "border-yellow-300 bg-yellow-50"
-                            : "border-green-300 bg-green-50"
-                        }`}
+                        className={`border rounded-lg p-4 ${cardClasses}`}
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div>
@@ -262,11 +269,7 @@ const RiepilogoDisponibilita = () => {
                               {item.orario_inizio} - {item.orario_fine}
                             </p>
                           </div>
-                          {item.attenzione ? (
-                            <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600" />
-                          ) : (
-                            <CheckCircleIcon className="h-5 w-5 text-green-600" />
-                          )}
+                          {iconComponent}
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-sm">
                           <div>
@@ -297,14 +300,20 @@ const RiepilogoDisponibilita = () => {
                         <div className="mt-2 text-xs text-gray-500">
                           Max {item.max_volontari} volontari per slot
                         </div>
-                        {item.attenzione && (
+                        {item.critico && (
+                          <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-800">
+                            🔴 Critico: {item.totale_disponibili < item.max_volontari 
+                              ? `Solo ${item.totale_disponibili} disponibile/i su ${item.max_volontari} richiesti`
+                              : "Nessun uomo disponibile e non ci sono abbastanza persone"}
+                          </div>
+                        )}
+                        {item.attenzione && !item.critico && (
                           <div className="mt-2 p-2 bg-yellow-100 rounded text-xs text-yellow-800">
-                            ⚠️ Attenzione: Nessun uomo disponibile per questo
-                            turno
+                            ⚠️ Attenzione: Nessun uomo disponibile per questo turno
                           </div>
                         )}
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
               ))}
@@ -324,16 +333,16 @@ const RiepilogoDisponibilita = () => {
             <div className="mt-1 text-sm text-blue-700">
               <ul className="list-disc list-inside space-y-1">
                 <li>
-                  Gli slot con <span className="font-medium">attenzione</span>{" "}
-                  non hanno uomini disponibili
+                  Gli slot <span className="font-medium text-red-600">critici (rosso)</span>{" "}
+                  non hanno abbastanza disponibili o mancano uomini
                 </li>
                 <li>
-                  Gli slot <span className="font-medium">sufficienti</span>{" "}
-                  hanno almeno 1 uomo disponibile
+                  Gli slot con <span className="font-medium text-yellow-600">attenzione (giallo)</span>{" "}
+                  hanno abbastanza persone ma nessun uomo disponibile
                 </li>
                 <li>
-                  L'autocompilazione funziona anche senza uomini, ma viene
-                  segnalato un flag di attenzione
+                  Gli slot <span className="font-medium text-green-600">sufficienti (verde)</span>{" "}
+                  hanno abbastanza disponibili e almeno 1 uomo
                 </li>
                 <li>
                   Utilizza i filtri per concentrarti sui periodi specifici

@@ -98,13 +98,13 @@ async function debugNotarbartolo() {
     for (const data of dateAgosto) {
       const dayOfWeek = await db.one(`
         SELECT CASE 
-          WHEN EXTRACT(DOW FROM $1::date) = 0 THEN 1  -- Domenica
-          WHEN EXTRACT(DOW FROM $1::date) = 1 THEN 2  -- Lunedì
-          WHEN EXTRACT(DOW FROM $1::date) = 2 THEN 3  -- Martedì
-          WHEN EXTRACT(DOW FROM $1::date) = 3 THEN 4  -- Mercoledì
-          WHEN EXTRACT(DOW FROM $1::date) = 4 THEN 5  -- Giovedì
-          WHEN EXTRACT(DOW FROM $1::date) = 5 THEN 6  -- Venerdì
-          WHEN EXTRACT(DOW FROM $1::date) = 6 THEN 7  -- Sabato
+          WHEN EXTRACT(DOW FROM $1::date) = 0 THEN 7  -- Domenica
+          WHEN EXTRACT(DOW FROM $1::date) = 1 THEN 1  -- Lunedì
+          WHEN EXTRACT(DOW FROM $1::date) = 2 THEN 2  -- Martedì
+          WHEN EXTRACT(DOW FROM $1::date) = 3 THEN 3  -- Mercoledì
+          WHEN EXTRACT(DOW FROM $1::date) = 4 THEN 4  -- Giovedì
+          WHEN EXTRACT(DOW FROM $1::date) = 5 THEN 5  -- Venerdì
+          WHEN EXTRACT(DOW FROM $1::date) = 6 THEN 6  -- Sabato
         END as day_number
       `, [data]);
 

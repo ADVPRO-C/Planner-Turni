@@ -1,14 +1,24 @@
-import React from "react";
+import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { api } from "../utils/api";
+import toast from "react-hot-toast";
 import {
   CogIcon,
   UserCircleIcon,
   ShieldCheckIcon,
   BellIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 
 const Impostazioni = () => {
   const { user } = useAuth();
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [loading, setLoading] = useState(false);
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -87,7 +97,10 @@ const Impostazioni = () => {
                   Aggiorna la tua password per mantenere sicuro l'account
                 </p>
               </div>
-              <button className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors duration-200">
+              <button 
+                onClick={() => setShowPasswordModal(true)}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors duration-200"
+              >
                 Modifica
               </button>
             </div>
@@ -198,6 +211,170 @@ const Impostazioni = () => {
           </div>
         )}
       </div>
+
+      {/* Modal Cambio Password */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900">
+                  Cambia Password
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setPasswordData({
+                      currentPassword: "",
+                      newPassword: "",
+                      confirmPassword: "",
+                    });
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  
+                  // Validazione
+                  if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+                    toast.error("Tutti i campi sono obbligatori");
+                    return;
+                  }
+
+                  if (passwordData.newPassword.length < 6) {
+                    toast.error("La nuova password deve essere di almeno 6 caratteri");
+                    return;
+                  }
+
+                  if (passwordData.newPassword !== passwordData.confirmPassword) {
+                    toast.error("Le password non corrispondono");
+                    return;
+                  }
+
+                  if (passwordData.currentPassword === passwordData.newPassword) {
+                    toast.error("La nuova password deve essere diversa dalla password corrente");
+                    return;
+                  }
+
+                  setLoading(true);
+                  try {
+                    await api.put("/auth/change-password", {
+                      currentPassword: passwordData.currentPassword,
+                      newPassword: passwordData.newPassword,
+                    });
+
+                    toast.success("Password cambiata con successo!");
+                    setShowPasswordModal(false);
+                    setPasswordData({
+                      currentPassword: "",
+                      newPassword: "",
+                      confirmPassword: "",
+                    });
+                  } catch (error) {
+                    console.error("Errore nel cambio password:", error);
+                    toast.error(
+                      error.response?.data?.message || "Errore durante il cambio password"
+                    );
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Password Corrente *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    value={passwordData.currentPassword}
+                    onChange={(e) =>
+                      setPasswordData({
+                        ...passwordData,
+                        currentPassword: e.target.value,
+                      })
+                    }
+                    placeholder="Inserisci la password corrente"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nuova Password *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    value={passwordData.newPassword}
+                    onChange={(e) =>
+                      setPasswordData({
+                        ...passwordData,
+                        newPassword: e.target.value,
+                      })
+                    }
+                    placeholder="Minimo 6 caratteri"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    La password deve contenere almeno 6 caratteri
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Conferma Nuova Password *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    value={passwordData.confirmPassword}
+                    onChange={(e) =>
+                      setPasswordData({
+                        ...passwordData,
+                        confirmPassword: e.target.value,
+                      })
+                    }
+                    placeholder="Ripeti la nuova password"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasswordModal(false);
+                      setPasswordData({
+                        currentPassword: "",
+                        newPassword: "",
+                        confirmPassword: "",
+                      });
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                    disabled={loading}
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? "Salvataggio..." : "Salva"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

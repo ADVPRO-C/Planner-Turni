@@ -21,6 +21,7 @@
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^2.5.1",
     "multer": "^2.0.2",
+    "nodemailer": "^7.0.10",
     "pg": "^8.11.3",
     "pg-promise": "^11.5.4"
   },

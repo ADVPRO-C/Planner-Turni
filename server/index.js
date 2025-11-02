@@ -12,9 +12,11 @@ const turniRoutes = require("./routes/turni");
 const cronologiaRoutes = require("./routes/cronologia");
 const assistenzaRoutes = require("./routes/assistenza");
 const congregazioniRoutes = require("./routes/congregazioni");
+const esperienzeRoutes = require("./routes/esperienze");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+const HOST = process.env.HOST || "127.0.0.1";
 
 // Middleware di sicurezza
 app.use(helmet());
@@ -49,6 +51,8 @@ app.use("/api/assistenza", assistenzaRoutes);
 console.log("✓ Route assistenza caricate");
 app.use("/api/congregazioni", congregazioniRoutes);
 console.log("✓ Route congregazioni caricate");
+app.use("/api/esperienze", esperienzeRoutes);
+console.log("✓ Route esperienze caricate");
 
 // Route di test
 app.get("/api/health", (req, res) => {
@@ -83,10 +87,10 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server in esecuzione sulla porta ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Server in esecuzione su http://${HOST}:${PORT}`);
   console.log(
-    `Health check disponibile su: http://localhost:${PORT}/api/health`
+    `Health check disponibile su: http://${HOST}:${PORT}/api/health`
   );
 });
 

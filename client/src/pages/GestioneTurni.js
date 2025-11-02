@@ -72,14 +72,16 @@ const Autocompilazione = () => {
   const [pendingAssignments, setPendingAssignments] = useState(new Map()); // Modifiche in sospeso
   const [pendingRemovals, setPendingRemovals] = useState(new Map()); // Rimozioni in sospeso
   const [manuallyEmptiedSlots, setManuallyEmptiedSlots] = useState(new Set()); // Slot lasciati vuoti manualmente dall'utente (formato: "date-slotId-postazioneId")
-  
+
   // Stato per tooltip nomi troncati
   const [tooltip, setTooltip] = useState({ show: false, text: "", x: 0, y: 0 });
-  
+
   // Carica gli slot lasciati vuoti manualmente dal localStorage
   const loadManuallyEmptiedSlots = (year, month) => {
     try {
-      const stored = localStorage.getItem(`manuallyEmptiedSlots_${year}_${month}`);
+      const stored = localStorage.getItem(
+        `manuallyEmptiedSlots_${year}_${month}`
+      );
       if (stored) {
         return new Set(JSON.parse(stored));
       }
@@ -88,7 +90,7 @@ const Autocompilazione = () => {
     }
     return new Set();
   };
-  
+
   // Salva gli slot lasciati vuoti manualmente nel localStorage
   const saveManuallyEmptiedSlots = (slots, year, month) => {
     try {
@@ -184,7 +186,10 @@ const Autocompilazione = () => {
     loadGestioneData();
     loadContatoriMensili();
     // Carica gli slot lasciati vuoti manualmente per il mese corrente
-    const slotsForMonth = loadManuallyEmptiedSlots(selectedMonth.year, selectedMonth.month);
+    const slotsForMonth = loadManuallyEmptiedSlots(
+      selectedMonth.year,
+      selectedMonth.month
+    );
     setManuallyEmptiedSlots(slotsForMonth);
   }, [selectedDateRange]); // Ricarica i dati quando cambia il range di date
 
@@ -239,8 +244,10 @@ const Autocompilazione = () => {
     const date = new Date(dateString);
     const dayOfWeek = date.getDay(); // 0 = Domenica, 1 = Lunedì, ..., 6 = Sabato
 
-    // Converti in formato nostro sistema (1 = Domenica, 2 = Lunedì, ..., 7 = Sabato)
-    const nostroGiorno = dayOfWeek === 0 ? 1 : dayOfWeek + 1;
+    // Converti in formato nostro sistema (1 = Lunedì, 2 = Martedì, ..., 7 = Domenica)
+    // JavaScript: 0=Domenica, 1=Lunedì, ..., 6=Sabato
+    // Nostro sistema: 1=Lunedì, 2=Martedì, ..., 7=Domenica
+    const nostroGiorno = dayOfWeek === 0 ? 7 : dayOfWeek;
 
     return postazione.giorni_settimana.includes(nostroGiorno);
   };
@@ -353,18 +360,21 @@ const Autocompilazione = () => {
   const getContatoriDinamici = (volontarioId) => {
     const contatori = contatoriMensili[volontarioId] || {
       disponibilita_totali: 0,
-      assegnazioni_totali: 0
+      assegnazioni_totali: 0,
     };
 
     // Calcola le assegnazioni in sospeso per questo volontario nel mese corrente
     let assegnazioniInSospeso = 0;
-    
+
     pendingAssignments.forEach((assignments, _key) => {
       assignments.forEach((assignment) => {
         if (assignment.volontario_id === parseInt(volontarioId)) {
           // Verifica che l'assegnazione sia nel range di date corrente
           const assignmentDate = assignment.data_turno;
-          if (assignmentDate >= selectedDateRange.inizio && assignmentDate <= selectedDateRange.fine) {
+          if (
+            assignmentDate >= selectedDateRange.inizio &&
+            assignmentDate <= selectedDateRange.fine
+          ) {
             assegnazioniInSospeso++;
           }
         }
@@ -373,7 +383,7 @@ const Autocompilazione = () => {
 
     // Calcola le rimozioni in sospeso per questo volontario nel mese corrente
     let rimozioniInSospeso = 0;
-    
+
     pendingRemovals.forEach((volontariSet, assegnazioneId) => {
       if (!volontariSet || volontariSet.size === 0) return;
       if (!volontariSet.has(parseInt(volontarioId))) return;
@@ -386,7 +396,9 @@ const Autocompilazione = () => {
         if (typeof assegnazione.data_turno === "string") {
           assegnazioneDate = assegnazione.data_turno.split("T")[0];
         } else {
-          assegnazioneDate = assegnazione.data_turno.toISOString().split("T")[0];
+          assegnazioneDate = assegnazione.data_turno
+            .toISOString()
+            .split("T")[0];
         }
 
         if (
@@ -400,7 +412,10 @@ const Autocompilazione = () => {
 
     return {
       disponibilita_totali: contatori.disponibilita_totali,
-      assegnazioni_totali: contatori.assegnazioni_totali + assegnazioniInSospeso - rimozioniInSospeso
+      assegnazioni_totali:
+        contatori.assegnazioni_totali +
+        assegnazioniInSospeso -
+        rimozioniInSospeso,
     };
   };
 
@@ -458,20 +473,22 @@ const Autocompilazione = () => {
         const pendingAssignmentsForSlot = pendingAssignments.get(key) || [];
 
         // Filtra le assegnazioni pending che sono state rimosse
-        const validPendingAssignments = pendingAssignmentsForSlot.filter((pending) => {
-          for (const [assegnazioneId, volontariSet] of pendingRemovals) {
-            if (!volontariSet || volontariSet.size === 0) continue;
-            const matchingExisting = existingAssignments.find(
-              (a) =>
-                a.assegnazione_id === parseInt(assegnazioneId, 10) &&
-                a.volontario_id === pending.volontario_id
-            );
-            if (matchingExisting && volontariSet.has(pending.volontario_id)) {
-              return false;
+        const validPendingAssignments = pendingAssignmentsForSlot.filter(
+          (pending) => {
+            for (const [assegnazioneId, volontariSet] of pendingRemovals) {
+              if (!volontariSet || volontariSet.size === 0) continue;
+              const matchingExisting = existingAssignments.find(
+                (a) =>
+                  a.assegnazione_id === parseInt(assegnazioneId, 10) &&
+                  a.volontario_id === pending.volontario_id
+              );
+              if (matchingExisting && volontariSet.has(pending.volontario_id)) {
+                return false;
+              }
             }
+            return true;
           }
-          return true;
-        });
+        );
 
         // Conta le assegnazioni totali (esistenti + pending valide)
         const totalAssignments =
@@ -498,7 +515,11 @@ const Autocompilazione = () => {
   // Verifica se c'è almeno un uomo nelle assegnazioni (esistenti + pending)
   const hasManInSlot = (date, slotOrarioId, postazioneId) => {
     // Controlla nelle assegnazioni esistenti
-    const existingAssignments = getExistingAssignments(date, slotOrarioId, postazioneId);
+    const existingAssignments = getExistingAssignments(
+      date,
+      slotOrarioId,
+      postazioneId
+    );
     const hasManInExisting = existingAssignments.some((a) => a.sesso === "M");
 
     if (hasManInExisting) return true;
@@ -622,15 +643,21 @@ const Autocompilazione = () => {
     });
 
     setPendingAssignments(newPendingAssignments);
-    
+
     // Se questo slot era stato marcato come "lasciato vuoto manualmente",
     // rimuovilo dal Set perché ora l'utente sta aggiungendo volontari
     if (manuallyEmptiedSlots.has(key)) {
       const newManuallyEmptiedSlots = new Set(manuallyEmptiedSlots);
       newManuallyEmptiedSlots.delete(key);
       setManuallyEmptiedSlots(newManuallyEmptiedSlots);
-      saveManuallyEmptiedSlots(newManuallyEmptiedSlots, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
-      console.log(`🗑️ Slot ${key} rimosso da manuallyEmptiedSlots (volontario aggiunto manualmente)`);
+      saveManuallyEmptiedSlots(
+        newManuallyEmptiedSlots,
+        selectedMonth.year,
+        selectedMonth.month
+      ); // Salva nel localStorage
+      console.log(
+        `🗑️ Slot ${key} rimosso da manuallyEmptiedSlots (volontario aggiunto manualmente)`
+      );
     }
 
     // Forza un re-render immediato per mostrare il feedback visivo
@@ -685,10 +712,12 @@ const Autocompilazione = () => {
       updatedSet.add(parseInt(volontarioId, 10));
       newPendingRemovals.set(String(assegnazioneId), updatedSet);
       setPendingRemovals(newPendingRemovals);
-      
+
       // Marca questo slot come "lasciato vuoto manualmente" per evitare che l'autocompilazione lo riempia
       // Trova la chiave dello slot basandosi sull'assegnazione
-      const assignment = data?.assegnazioni?.find(a => a.id === parseInt(assegnazioneId));
+      const assignment = data?.assegnazioni?.find(
+        (a) => a.id === parseInt(assegnazioneId)
+      );
       if (assignment) {
         let assignmentDate;
         if (typeof assignment.data_turno === "string") {
@@ -700,10 +729,16 @@ const Autocompilazione = () => {
         const newManuallyEmptiedSlots = new Set(manuallyEmptiedSlots);
         newManuallyEmptiedSlots.add(slotKey);
         setManuallyEmptiedSlots(newManuallyEmptiedSlots);
-        saveManuallyEmptiedSlots(newManuallyEmptiedSlots, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
-        console.log(`🏷️ Slot ${slotKey} marcato come lasciato vuoto manualmente`);
+        saveManuallyEmptiedSlots(
+          newManuallyEmptiedSlots,
+          selectedMonth.year,
+          selectedMonth.month
+        ); // Salva nel localStorage
+        console.log(
+          `🏷️ Slot ${slotKey} marcato come lasciato vuoto manualmente`
+        );
       }
-      
+
       console.log(
         "✅ Aggiunta rimozione in sospeso per assegnazione:",
         assegnazioneId
@@ -743,7 +778,9 @@ const Autocompilazione = () => {
             await api.delete(
               `/turni/assegnazione/${assegnazioneIdNum}/volontario/${volontarioIdNum}`
             );
-            console.log(`✅ Volontario ${volontarioIdNum} rimosso con successo`);
+            console.log(
+              `✅ Volontario ${volontarioIdNum} rimosso con successo`
+            );
           } catch (error) {
             console.error("❌ Errore rimozione:", {
               error: error.message,
@@ -774,7 +811,7 @@ const Autocompilazione = () => {
 
         for (const assignment of assignments) {
           const volontarioId = parseInt(assignment.volontario_id);
-          
+
           // Verifica se questo volontario è già stato processato per questo slot
           if (processedForSlot.has(volontarioId)) {
             console.warn(
@@ -782,7 +819,7 @@ const Autocompilazione = () => {
             );
             continue;
           }
-          
+
           // Verifica se il volontario è già assegnato nel database
           const existingAssignments = getExistingAssignments(
             assignment.data_turno,
@@ -831,20 +868,21 @@ const Autocompilazione = () => {
             if (!response || !response.data) {
               throw new Error("Risposta non valida dal server");
             }
-            
-            console.log(
-              `✅ Volontario ${volontarioId} assegnato con successo`
-            );
-            
+
+            console.log(`✅ Volontario ${volontarioId} assegnato con successo`);
+
             // Segna come processato per evitare duplicati
             processedForSlot.add(volontarioId);
           } catch (error) {
-            console.error(`❌ Errore assegnazione volontario ${volontarioId}:`, {
-              error: error.message,
-              response: error.response?.data,
-              status: error.response?.status,
-              requestBody,
-            });
+            console.error(
+              `❌ Errore assegnazione volontario ${volontarioId}:`,
+              {
+                error: error.message,
+                response: error.response?.data,
+                status: error.response?.status,
+                requestBody,
+              }
+            );
             // Non bloccare il processo, ma logga l'errore
             throw error; // Rilancia per fermare il salvataggio se c'è un errore critico
           }
@@ -854,7 +892,7 @@ const Autocompilazione = () => {
       // Salva gli slot lasciati vuoti manualmente PRIMA di pulire pendingRemovals
       // così possiamo mantenerli dopo il salvataggio
       const slotsToKeepAsEmpty = new Set(manuallyEmptiedSlots);
-      
+
       // Pulisci le modifiche in sospeso
       setPendingAssignments(new Map());
       setPendingRemovals(new Map());
@@ -862,11 +900,15 @@ const Autocompilazione = () => {
       // Ricarica i dati per aggiornare la visualizzazione
       await loadGestioneData();
       await loadContatoriMensili();
-      
+
       // Ripristina gli slot lasciati vuoti manualmente dopo il ricaricamento
       // così l'autocompilazione continuerà a rispettarli
       setManuallyEmptiedSlots(slotsToKeepAsEmpty);
-      saveManuallyEmptiedSlots(slotsToKeepAsEmpty, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
+      saveManuallyEmptiedSlots(
+        slotsToKeepAsEmpty,
+        selectedMonth.year,
+        selectedMonth.month
+      ); // Salva nel localStorage
 
       toast.success("Modifiche salvate con successo");
     } catch (error) {
@@ -876,7 +918,10 @@ const Autocompilazione = () => {
         status: error.response?.status,
         stack: error.stack,
       });
-      const errorMessage = error.response?.data?.message || error.message || "Errore nel salvataggio delle modifiche";
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Errore nel salvataggio delle modifiche";
       toast.error(errorMessage);
     }
   };
@@ -962,11 +1007,12 @@ const Autocompilazione = () => {
                 slot.id,
                 postazione.id
               );
-              
+
               // Ottieni anche le assegnazioni in sospeso per questo slot
               const key = `${date}-${slot.id}-${postazione.id}`;
-              const existingPendingForSlot = newPendingAssignments.get(key) || [];
-              
+              const existingPendingForSlot =
+                newPendingAssignments.get(key) || [];
+
               // IMPORTANTE: Verifica se questo slot è stato lasciato vuoto manualmente dall'utente
               const slotKey = `${date}-${slot.id}-${postazione.id}`;
               if (manuallyEmptiedSlots.has(slotKey)) {
@@ -978,41 +1024,39 @@ const Autocompilazione = () => {
 
               // IMPORTANTE: Verifica se ci sono rimozioni in sospeso per questo slot
               // Se ci sono rimozioni, NON autocompilare questo slot (l'utente ha voluto lasciarlo libero)
-              const hasPendingRemovals = Array.from(pendingRemovals.entries()).some(
-                ([assegnazioneId, volontariSet]) => {
-                  if (!volontariSet || volontariSet.size === 0) {
-                    return false;
-                  }
-
-                  const removedAssignment = existingAssignments.find(
-                    (a) =>
-                      a.assegnazione_id === parseInt(assegnazioneId, 10) &&
-                      volontariSet.has(a.volontario_id)
-                  );
-                  if (removedAssignment) {
-                    return true;
-                  }
-
-                  const assignmentForSlot = data?.assegnazioni?.find((a) => {
-                    let assegnazioneDate;
-                    if (typeof a.data_turno === "string") {
-                      assegnazioneDate = a.data_turno.split("T")[0];
-                    } else {
-                      assegnazioneDate = a.data_turno
-                        .toISOString()
-                        .split("T")[0];
-                    }
-                    return (
-                      parseInt(a.id) === parseInt(assegnazioneId, 10) &&
-                      assegnazioneDate === date &&
-                      a.slot_orario_id === slot.id &&
-                      a.postazione_id === postazione.id &&
-                      Array.from(volontariSet).includes(a.volontario_id)
-                    );
-                  });
-                  return assignmentForSlot !== undefined;
+              const hasPendingRemovals = Array.from(
+                pendingRemovals.entries()
+              ).some(([assegnazioneId, volontariSet]) => {
+                if (!volontariSet || volontariSet.size === 0) {
+                  return false;
                 }
-              );
+
+                const removedAssignment = existingAssignments.find(
+                  (a) =>
+                    a.assegnazione_id === parseInt(assegnazioneId, 10) &&
+                    volontariSet.has(a.volontario_id)
+                );
+                if (removedAssignment) {
+                  return true;
+                }
+
+                const assignmentForSlot = data?.assegnazioni?.find((a) => {
+                  let assegnazioneDate;
+                  if (typeof a.data_turno === "string") {
+                    assegnazioneDate = a.data_turno.split("T")[0];
+                  } else {
+                    assegnazioneDate = a.data_turno.toISOString().split("T")[0];
+                  }
+                  return (
+                    parseInt(a.id) === parseInt(assegnazioneId, 10) &&
+                    assegnazioneDate === date &&
+                    a.slot_orario_id === slot.id &&
+                    a.postazione_id === postazione.id &&
+                    Array.from(volontariSet).includes(a.volontario_id)
+                  );
+                });
+                return assignmentForSlot !== undefined;
+              });
 
               // Se ci sono rimozioni in sospeso per questo slot, NON autocompilare
               // L'utente ha voluto lasciare questo slot libero
@@ -1021,22 +1065,26 @@ const Autocompilazione = () => {
                 const newManuallyEmptiedSlots = new Set(manuallyEmptiedSlots);
                 newManuallyEmptiedSlots.add(slotKey);
                 setManuallyEmptiedSlots(newManuallyEmptiedSlots);
-                saveManuallyEmptiedSlots(newManuallyEmptiedSlots, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
+                saveManuallyEmptiedSlots(
+                  newManuallyEmptiedSlots,
+                  selectedMonth.year,
+                  selectedMonth.month
+                ); // Salva nel localStorage
                 console.log(
                   `⏭️ Slot con rimozioni in sospeso per ${date} ${slot.orario_inizio}-${slot.orario_fine} - ${postazione.luogo}, salto (l'utente ha voluto lasciarlo libero)`
                 );
                 return;
               }
-              
+
               // Combina assegnazioni esistenti e pending per calcolare il totale
               const allAssignedVolunteerIds = new Set([
                 ...existingAssignments.map((a) => a.volontario_id),
                 ...existingPendingForSlot.map((a) => parseInt(a.volontario_id)),
               ]);
-              
+
               const maxProclamatori = postazione.max_proclamatori || 3;
               const totalAssigned = allAssignedVolunteerIds.size;
-              
+
               // Se lo slot è già completo, salta (NON toccare le assegnazioni esistenti)
               if (totalAssigned >= maxProclamatori) {
                 console.log(
@@ -1044,7 +1092,7 @@ const Autocompilazione = () => {
                 );
                 return;
               }
-              
+
               const availableVolunteers = getAvailableVolunteers(
                 date,
                 slot.orario_inizio,
@@ -1074,125 +1122,129 @@ const Autocompilazione = () => {
                 (v) => !allAssignedVolunteerIds.has(v.volontario_id)
               );
 
-                console.log(`🎯 Volontari da assegnare: ${volunteersNeeded}`, {
-                  availableForAssignment: availableForAssignment.map(
-                    (v) => `${v.nome} ${v.cognome} (${v.sesso})`
-                  ),
-                });
+              console.log(`🎯 Volontari da assegnare: ${volunteersNeeded}`, {
+                availableForAssignment: availableForAssignment.map(
+                  (v) => `${v.nome} ${v.cognome} (${v.sesso})`
+                ),
+              });
 
-                // Logica corretta per rispettare "almeno un uomo per turno" con distribuzione intelligente
-                const volunteersToAssign = [];
+              // Logica corretta per rispettare "almeno un uomo per turno" con distribuzione intelligente
+              const volunteersToAssign = [];
 
-                // Controlla se serve un uomo
-                const needsMale = needsMaleVolunteer(
-                  date,
-                  slot.id,
-                  postazione.id
+              // Controlla se serve un uomo
+              const needsMale = needsMaleVolunteer(
+                date,
+                slot.id,
+                postazione.id
+              );
+              console.log(`🔍 Serve un uomo? ${needsMale}`);
+
+              if (needsMale) {
+                // Prima cerca un uomo disponibile con l'ultima assegnazione più vecchia
+                const availableMen = availableForAssignment.filter(
+                  (v) => v.sesso === "M"
                 );
-                console.log(`🔍 Serve un uomo? ${needsMale}`);
 
-                if (needsMale) {
-                  // Prima cerca un uomo disponibile con l'ultima assegnazione più vecchia
-                  const availableMen = availableForAssignment.filter(
-                    (v) => v.sesso === "M"
+                if (availableMen.length > 0) {
+                  // Ordina gli uomini per data dell'ultima assegnazione
+                  const sortedMen =
+                    sortVolunteersByLastAssignment(availableMen);
+                  const selectedMan = sortedMen[0];
+
+                  volunteersToAssign.push(selectedMan);
+                  console.log(
+                    `👨 Assegnato uomo (ultima assegnazione: ${getLastAssignmentDate(
+                      selectedMan.volontario_id
+                    ).toLocaleDateString()}): ${selectedMan.nome} ${
+                      selectedMan.cognome
+                    }`
                   );
 
-                  if (availableMen.length > 0) {
-                    // Ordina gli uomini per data dell'ultima assegnazione
-                    const sortedMen =
-                      sortVolunteersByLastAssignment(availableMen);
-                    const selectedMan = sortedMen[0];
+                  // Rimuovi l'uomo assegnato dalla lista disponibile
+                  const remainingAvailable = availableForAssignment.filter(
+                    (v) => v.volontario_id !== selectedMan.volontario_id
+                  );
 
-                    volunteersToAssign.push(selectedMan);
+                  // Assegna gli altri volontari necessari con distribuzione intelligente
+                  const additionalNeeded = volunteersNeeded - 1;
+                  if (additionalNeeded > 0 && remainingAvailable.length > 0) {
+                    // Ordina i rimanenti per data dell'ultima assegnazione
+                    const sortedRemaining =
+                      sortVolunteersByLastAssignment(remainingAvailable);
+                    const additionalVolunteers = sortedRemaining.slice(
+                      0,
+                      additionalNeeded
+                    );
+
+                    volunteersToAssign.push(...additionalVolunteers);
                     console.log(
-                      `👨 Assegnato uomo (ultima assegnazione: ${getLastAssignmentDate(
-                        selectedMan.volontario_id
-                      ).toLocaleDateString()}): ${selectedMan.nome} ${
-                        selectedMan.cognome
-                      }`
+                      `👥 Assegnati altri (distribuzione intelligente): ${additionalVolunteers
+                        .map(
+                          (v) =>
+                            `${v.nome} ${v.cognome} (${
+                              v.sesso
+                            }, ultima: ${getLastAssignmentDate(
+                              v.volontario_id
+                            ).toLocaleDateString()})`
+                        )
+                        .join(", ")}`
                     );
-
-                    // Rimuovi l'uomo assegnato dalla lista disponibile
-                    const remainingAvailable = availableForAssignment.filter(
-                      (v) => v.volontario_id !== selectedMan.volontario_id
-                    );
-
-                    // Assegna gli altri volontari necessari con distribuzione intelligente
-                    const additionalNeeded = volunteersNeeded - 1;
-                    if (additionalNeeded > 0 && remainingAvailable.length > 0) {
-                      // Ordina i rimanenti per data dell'ultima assegnazione
-                      const sortedRemaining =
-                        sortVolunteersByLastAssignment(remainingAvailable);
-                      const additionalVolunteers = sortedRemaining.slice(
-                        0,
-                        additionalNeeded
-                      );
-
-                      volunteersToAssign.push(...additionalVolunteers);
-                      console.log(
-                        `👥 Assegnati altri (distribuzione intelligente): ${additionalVolunteers
-                          .map(
-                            (v) =>
-                              `${v.nome} ${v.cognome} (${
-                                v.sesso
-                              }, ultima: ${getLastAssignmentDate(
-                                v.volontario_id
-                              ).toLocaleDateString()})`
-                          )
-                          .join(", ")}`
-                      );
-                    }
-                  } else {
-                    const errorMsg = `⚠️ Nessun uomo disponibile per ${date} ${slot.orario_inizio}-${slot.orario_fine} - ${postazione.luogo}`;
-                    console.log(errorMsg);
-                    errors.push(errorMsg);
                   }
                 } else {
-                  // Non serve un uomo, assegna chi vuoi con distribuzione intelligente
-                  const sortedVolunteers = sortVolunteersByLastAssignment(
-                    availableForAssignment
-                  );
-                  const selectedVolunteers = sortedVolunteers.slice(
-                    0,
-                    volunteersNeeded
-                  );
-
-                  volunteersToAssign.push(...selectedVolunteers);
-                  console.log(
-                    `👥 Assegnati tutti (distribuzione intelligente): ${selectedVolunteers
-                      .map(
-                        (v) =>
-                          `${v.nome} ${v.cognome} (${
-                            v.sesso
-                          }, ultima: ${getLastAssignmentDate(
-                            v.volontario_id
-                          ).toLocaleDateString()})`
-                      )
-                      .join(", ")}`
-                  );
+                  const errorMsg = `⚠️ Nessun uomo disponibile per ${date} ${slot.orario_inizio}-${slot.orario_fine} - ${postazione.luogo}`;
+                  console.log(errorMsg);
+                  errors.push(errorMsg);
                 }
+              } else {
+                // Non serve un uomo, assegna chi vuoi con distribuzione intelligente
+                const sortedVolunteers = sortVolunteersByLastAssignment(
+                  availableForAssignment
+                );
+                const selectedVolunteers = sortedVolunteers.slice(
+                  0,
+                  volunteersNeeded
+                );
 
-                if (volunteersToAssign.length > 0) {
-                  // Aggiungi le nuove assegnazioni a quelle già esistenti per questo slot
-                  const existingPendingForThisSlot = newPendingAssignments.get(key) || [];
-                  const newAssignments = volunteersToAssign.map((volunteer) => ({
-                    volontario_id: parseInt(volunteer.volontario_id),
-                    data_turno: date,
-                    slot_orario_id: slot.id,
-                    postazione_id: postazione.id,
-                  }));
+                volunteersToAssign.push(...selectedVolunteers);
+                console.log(
+                  `👥 Assegnati tutti (distribuzione intelligente): ${selectedVolunteers
+                    .map(
+                      (v) =>
+                        `${v.nome} ${v.cognome} (${
+                          v.sesso
+                        }, ultima: ${getLastAssignmentDate(
+                          v.volontario_id
+                        ).toLocaleDateString()})`
+                    )
+                    .join(", ")}`
+                );
+              }
 
-                  // Combina le nuove assegnazioni con quelle già in sospeso per questo slot
-                  const combinedAssignments = [...existingPendingForThisSlot, ...newAssignments];
-                  
-                  console.log(
-                    `✅ Aggiunte ${newAssignments.length} nuove assegnazioni a slot (totale pending per questo slot: ${combinedAssignments.length}):`,
-                    newAssignments.map((a) => a.volontario_id)
-                  );
-                  
-                  newPendingAssignments.set(key, combinedAssignments);
-                  totalNewAssignments += newAssignments.length;
-                }
+              if (volunteersToAssign.length > 0) {
+                // Aggiungi le nuove assegnazioni a quelle già esistenti per questo slot
+                const existingPendingForThisSlot =
+                  newPendingAssignments.get(key) || [];
+                const newAssignments = volunteersToAssign.map((volunteer) => ({
+                  volontario_id: parseInt(volunteer.volontario_id),
+                  data_turno: date,
+                  slot_orario_id: slot.id,
+                  postazione_id: postazione.id,
+                }));
+
+                // Combina le nuove assegnazioni con quelle già in sospeso per questo slot
+                const combinedAssignments = [
+                  ...existingPendingForThisSlot,
+                  ...newAssignments,
+                ];
+
+                console.log(
+                  `✅ Aggiunte ${newAssignments.length} nuove assegnazioni a slot (totale pending per questo slot: ${combinedAssignments.length}):`,
+                  newAssignments.map((a) => a.volontario_id)
+                );
+
+                newPendingAssignments.set(key, combinedAssignments);
+                totalNewAssignments += newAssignments.length;
+              }
             } catch (error) {
               const errorMsg = `Errore nell'elaborazione di ${date} ${slot.orario_inizio}-${slot.orario_fine}: ${error.message}`;
               console.error(errorMsg);
@@ -1238,10 +1290,13 @@ const Autocompilazione = () => {
           duration: 4000,
         });
       } else {
-        toast("Nessuna nuova assegnazione necessaria. Tutti gli slot vuoti/incompleti sono stati completati.", {
-          icon: "✅",
-          duration: 3000,
-        });
+        toast(
+          "Nessuna nuova assegnazione necessaria. Tutti gli slot vuoti/incompleti sono stati completati.",
+          {
+            icon: "✅",
+            duration: 3000,
+          }
+        );
       }
     } catch (error) {
       console.error("❌ Errore nell'autocompilazione:", error);
@@ -1268,7 +1323,7 @@ const Autocompilazione = () => {
       return;
     }
 
-      setCompiling(true);
+    setCompiling(true);
     try {
       const result = await api.post("/turni/reset", {
         data_inizio: selectedDateRange.inizio,
@@ -1294,10 +1349,18 @@ const Autocompilazione = () => {
       setPendingRemovals(new Map());
       const emptySlots = new Set();
       setManuallyEmptiedSlots(emptySlots);
-      saveManuallyEmptiedSlots(emptySlots, selectedMonth.year, selectedMonth.month); // Salva nel localStorage
+      saveManuallyEmptiedSlots(
+        emptySlots,
+        selectedMonth.year,
+        selectedMonth.month
+      ); // Salva nel localStorage
     } catch (error) {
       console.error("Errore:", error);
-      toast.error(error.response?.data?.message || error.message || "Errore di connessione");
+      toast.error(
+        error.response?.data?.message ||
+          error.message ||
+          "Errore di connessione"
+      );
     } finally {
       setCompiling(false);
     }
@@ -1737,20 +1800,22 @@ const Autocompilazione = () => {
 
     // Filtra le assegnazioni pending che sono state rimosse
     // (non dovrebbe essere necessario ma è una doppia verifica)
-    const validPendingAssignments = pendingAssignmentsForSlot.filter((pending) => {
-      for (const [assegnazioneId, volontariSet] of pendingRemovals) {
-        if (!volontariSet || volontariSet.size === 0) continue;
-        const matchingExisting = existingAssignments.find(
-          (a) =>
-            a.assegnazione_id === parseInt(assegnazioneId, 10) &&
-            a.volontario_id === pending.volontario_id
-        );
-        if (matchingExisting && volontariSet.has(pending.volontario_id)) {
-          return false;
+    const validPendingAssignments = pendingAssignmentsForSlot.filter(
+      (pending) => {
+        for (const [assegnazioneId, volontariSet] of pendingRemovals) {
+          if (!volontariSet || volontariSet.size === 0) continue;
+          const matchingExisting = existingAssignments.find(
+            (a) =>
+              a.assegnazione_id === parseInt(assegnazioneId, 10) &&
+              a.volontario_id === pending.volontario_id
+          );
+          if (matchingExisting && volontariSet.has(pending.volontario_id)) {
+            return false;
+          }
         }
+        return true;
       }
-      return true;
-    });
+    );
 
     const maxProclamatori = postazione.max_proclamatori || 3;
     // Usa validPendingAssignments invece di pendingAssignmentsForSlot per escludere quelle rimosse
@@ -1778,13 +1843,18 @@ const Autocompilazione = () => {
       const textColor = hasMan ? "text-green-700" : "text-orange-700";
 
       return (
-        <div className={`text-center p-2 ${bgColor} border ${borderColor} rounded`}>
+        <div
+          className={`text-center p-2 ${bgColor} border ${borderColor} rounded`}
+        >
           <div className="flex items-center justify-center mb-1">
             <div className={`text-xs ${textColor} font-medium`}>
               {totalAssignments}/{maxProclamatori} assegnati
             </div>
             {!hasMan && (
-              <ExclamationTriangleIcon className="h-4 w-4 ml-1 text-orange-600" title="Manca almeno un uomo nel gruppo" />
+              <ExclamationTriangleIcon
+                className="h-4 w-4 ml-1 text-orange-600"
+                title="Manca almeno un uomo nel gruppo"
+              />
             )}
           </div>
 
@@ -1798,16 +1868,27 @@ const Autocompilazione = () => {
                 <span
                   className="font-medium truncate cursor-help"
                   onMouseEnter={(e) =>
-                    handleMouseEnter(e, `${assignment.nome} ${assignment.cognome}`)
+                    handleMouseEnter(
+                      e,
+                      `${assignment.nome} ${assignment.cognome}`
+                    )
                   }
                   onMouseMove={handleMouseMove}
                   onMouseLeave={handleMouseLeave}
                 >
                   {assignment.nome} {assignment.cognome}
                 </span>
-                <span className={`text-xs ${hasMan ? "bg-green-200" : "bg-orange-200"} px-2 py-1 rounded-full ml-2 flex-shrink-0 ${hasMan ? "text-green-800" : "text-orange-800"}`}>
+                <span
+                  className={`text-xs ${
+                    hasMan ? "bg-green-200" : "bg-orange-200"
+                  } px-2 py-1 rounded-full ml-2 flex-shrink-0 ${
+                    hasMan ? "text-green-800" : "text-orange-800"
+                  }`}
+                >
                   {(() => {
-                    const contatori = getContatoriDinamici(assignment.volontario_id);
+                    const contatori = getContatoriDinamici(
+                      assignment.volontario_id
+                    );
                     return `${contatori.assegnazioni_totali} - ${contatori.disponibilita_totali}`;
                   })()}
                 </span>
@@ -1859,11 +1940,15 @@ const Autocompilazione = () => {
                       ? `${volunteerData.nome} ${volunteerData.cognome}`
                       : `Volontario ${pending.volontario_id}`}
                   </span>
-                  <span className="text-xs ml-2 bg-orange-200 px-1 py-0.5 rounded flex-shrink-0">(in sospeso)</span>
+                  <span className="text-xs ml-2 bg-orange-200 px-1 py-0.5 rounded flex-shrink-0">
+                    (in sospeso)
+                  </span>
                   {volunteerData && (
                     <span className="text-xs bg-orange-300 px-2 py-1 rounded-full ml-2 flex-shrink-0">
                       {(() => {
-                        const contatori = getContatoriDinamici(pending.volontario_id);
+                        const contatori = getContatoriDinamici(
+                          pending.volontario_id
+                        );
                         return `${contatori.assegnazioni_totali} - ${contatori.disponibilita_totali}`;
                       })()}
                     </span>
@@ -1907,13 +1992,18 @@ const Autocompilazione = () => {
       const textColor = hasMan ? "text-yellow-700" : "text-orange-700";
 
       return (
-        <div className={`text-center p-2 ${bgColor} border ${borderColor} rounded`}>
+        <div
+          className={`text-center p-2 ${bgColor} border ${borderColor} rounded`}
+        >
           <div className="flex items-center justify-center mb-1">
             <div className={`text-xs ${textColor} font-medium`}>
               {totalAssignments}/{maxProclamatori} assegnati
             </div>
             {!hasMan && (
-              <ExclamationTriangleIcon className="h-4 w-4 ml-1 text-orange-600" title="Manca almeno un uomo nel gruppo" />
+              <ExclamationTriangleIcon
+                className="h-4 w-4 ml-1 text-orange-600"
+                title="Manca almeno un uomo nel gruppo"
+              />
             )}
           </div>
 
@@ -1927,16 +2017,27 @@ const Autocompilazione = () => {
                 <span
                   className="font-medium truncate cursor-help"
                   onMouseEnter={(e) =>
-                    handleMouseEnter(e, `${assignment.nome} ${assignment.cognome}`)
+                    handleMouseEnter(
+                      e,
+                      `${assignment.nome} ${assignment.cognome}`
+                    )
                   }
                   onMouseMove={handleMouseMove}
                   onMouseLeave={handleMouseLeave}
                 >
                   {assignment.nome} {assignment.cognome}
                 </span>
-                <span className={`text-xs ${hasMan ? "bg-yellow-200" : "bg-orange-200"} px-2 py-1 rounded-full ml-2 flex-shrink-0 ${hasMan ? "text-yellow-800" : "text-orange-800"}`}>
+                <span
+                  className={`text-xs ${
+                    hasMan ? "bg-yellow-200" : "bg-orange-200"
+                  } px-2 py-1 rounded-full ml-2 flex-shrink-0 ${
+                    hasMan ? "text-yellow-800" : "text-orange-800"
+                  }`}
+                >
                   {(() => {
-                    const contatori = getContatoriDinamici(assignment.volontario_id);
+                    const contatori = getContatoriDinamici(
+                      assignment.volontario_id
+                    );
                     return `${contatori.assegnazioni_totali} - ${contatori.disponibilita_totali}`;
                   })()}
                 </span>
@@ -1988,11 +2089,15 @@ const Autocompilazione = () => {
                       ? `${volunteerData.nome} ${volunteerData.cognome}`
                       : `Volontario ${pending.volontario_id}`}
                   </span>
-                  <span className="text-xs ml-2 bg-orange-200 px-1 py-0.5 rounded flex-shrink-0">(in sospeso)</span>
+                  <span className="text-xs ml-2 bg-orange-200 px-1 py-0.5 rounded flex-shrink-0">
+                    (in sospeso)
+                  </span>
                   {volunteerData && (
                     <span className="text-xs bg-orange-300 px-2 py-1 rounded-full ml-2 flex-shrink-0">
                       {(() => {
-                        const contatori = getContatoriDinamici(pending.volontario_id);
+                        const contatori = getContatoriDinamici(
+                          pending.volontario_id
+                        );
                         return `${contatori.assegnazioni_totali} - ${contatori.disponibilita_totali}`;
                       })()}
                     </span>
@@ -2056,7 +2161,9 @@ const Autocompilazione = () => {
                     key={volunteer.volontario_id}
                     value={volunteer.volontario_id}
                   >
-                    {volunteer.nome} {volunteer.cognome} • [{contatori.assegnazioni_totali} - {contatori.disponibilita_totali}]
+                    {volunteer.nome} {volunteer.cognome} • [
+                    {contatori.assegnazioni_totali} -{" "}
+                    {contatori.disponibilita_totali}]
                   </option>
                 );
               })}
@@ -2106,7 +2213,9 @@ const Autocompilazione = () => {
                   key={volunteer.volontario_id}
                   value={volunteer.volontario_id}
                 >
-                  {volunteer.nome} {volunteer.cognome} • [{contatori.assegnazioni_totali} - {contatori.disponibilita_totali}]
+                  {volunteer.nome} {volunteer.cognome} • [
+                  {contatori.assegnazioni_totali} -{" "}
+                  {contatori.disponibilita_totali}]
                 </option>
               );
             })}
@@ -2198,31 +2307,45 @@ const Autocompilazione = () => {
                 📊 Legenda numeri tra parentesi accanto ai nomi:
               </p>
               <p className="ml-4">
-                • <strong>Primo numero</strong>: Assegnazioni totali del volontario nel mese selezionato
+                • <strong>Primo numero</strong>: Assegnazioni totali del
+                volontario nel mese selezionato
               </p>
               <p className="ml-4">
-                • <strong>Secondo numero</strong>: Disponibilità totali del volontario nel mese selezionato
+                • <strong>Secondo numero</strong>: Disponibilità totali del
+                volontario nel mese selezionato
               </p>
               <p className="ml-4">
-                • <strong>Formato</strong>: (assegnazioni totali - disponibilità totali)
+                • <strong>Formato</strong>: (assegnazioni totali - disponibilità
+                totali)
               </p>
               <p className="ml-4 text-blue-600">
-                • <strong>Esempio</strong>: Mario Rossi (8 - 32) = 8 assegnazioni totali, 32 disponibilità totali
+                • <strong>Esempio</strong>: Mario Rossi (8 - 32) = 8
+                assegnazioni totali, 32 disponibilità totali
               </p>
               <p className="font-medium mt-2 mb-1">
                 🎨 Legenda colori degli slot:
               </p>
               <p className="ml-4">
-                • <span className="inline-block w-3 h-3 bg-blue-100 border border-blue-300 rounded mr-1"></span> <strong>Blu</strong>: Slot vuoto (nessun volontario assegnato)
+                •{" "}
+                <span className="inline-block w-3 h-3 bg-blue-100 border border-blue-300 rounded mr-1"></span>{" "}
+                <strong>Blu</strong>: Slot vuoto (nessun volontario assegnato)
               </p>
               <p className="ml-4">
-                • <span className="inline-block w-3 h-3 bg-yellow-100 border border-yellow-300 rounded mr-1"></span> <strong>Giallo</strong>: Assegnazione parziale (non tutti i posti coperti)
+                •{" "}
+                <span className="inline-block w-3 h-3 bg-yellow-100 border border-yellow-300 rounded mr-1"></span>{" "}
+                <strong>Giallo</strong>: Assegnazione parziale (non tutti i
+                posti coperti)
               </p>
               <p className="ml-4">
-                • <span className="inline-block w-3 h-3 bg-green-100 border border-green-300 rounded mr-1"></span> <strong>Verde</strong>: Assegnazione completa con almeno un uomo
+                •{" "}
+                <span className="inline-block w-3 h-3 bg-green-100 border border-green-300 rounded mr-1"></span>{" "}
+                <strong>Verde</strong>: Assegnazione completa con almeno un uomo
               </p>
               <p className="ml-4">
-                • <span className="inline-block w-3 h-3 bg-orange-100 border border-orange-300 rounded mr-1"></span> <strong>Arancione</strong>: Assegnazione completa ma manca almeno un uomo <span className="text-orange-600">⚠️</span>
+                •{" "}
+                <span className="inline-block w-3 h-3 bg-orange-100 border border-orange-300 rounded mr-1"></span>{" "}
+                <strong>Arancione</strong>: Assegnazione completa ma manca
+                almeno un uomo <span className="text-orange-600">⚠️</span>
               </p>
             </div>
           </div>
@@ -2305,202 +2428,194 @@ const Autocompilazione = () => {
       </div>
       {/* Contenuto Gestione Turni */}
       <div className="space-y-6">
-        {data?.postazioni?.map((postazione) => (
-          <div key={postazione.id} className="bg-white rounded-lg shadow">
-            <div className="p-4 border-b border-gray-200">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      <MapPinIcon className="h-5 w-5 inline mr-2 text-primary-600" />
-                      {postazione.luogo}
-                    </h3>
-                    {isPostazioneComplete(postazione) ? (
-                      <CheckCircleIcon
-                        className="h-6 w-6 text-green-500"
-                        title="Postazione completa per questo mese"
-                      />
-                    ) : (
-                      <ClockIcon
-                        className="h-6 w-6 text-orange-500"
-                        title="Postazione non ancora completa per questo mese"
-                      />
+        {data?.postazioni?.map((postazione) => {
+          // Crea un dateRange specifico per questa postazione: solo giorni validi
+          const postazioneDateRange = (data?.dateRange || []).filter((date) =>
+            isPostazioneActiveForDate(postazione, date)
+          );
+
+          return (
+            <div key={postazione.id} className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        <MapPinIcon className="h-5 w-5 inline mr-2 text-primary-600" />
+                        {postazione.luogo}
+                      </h3>
+                      {isPostazioneComplete(postazione) ? (
+                        <CheckCircleIcon
+                          className="h-6 w-6 text-green-500"
+                          title="Postazione completa per questo mese"
+                        />
+                      ) : (
+                        <ClockIcon
+                          className="h-6 w-6 text-orange-500"
+                          title="Postazione non ancora completa per questo mese"
+                        />
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      {postazione.indirizzo}
+                    </p>
+                    <p className="text-sm text-primary-600 font-medium mt-1">
+                      Max proclamatori per turno:{" "}
+                      {postazione.max_proclamatori || 3}
+                    </p>
+                  </div>
+
+                  <div className="flex space-x-2">
+                    {/* Pulsante Autocompilazione */}
+                    <button
+                      onClick={() =>
+                        executeAutocompilazione(postazione.id, postazione.luogo)
+                      }
+                      disabled={compiling}
+                      className="btn-secondary flex items-center"
+                      title={`Esegui autocompilazione automatica per "${
+                        postazione.luogo
+                      }" nel mese ${getMonthName(
+                        selectedMonth.year,
+                        selectedMonth.month
+                      )}`}
+                    >
+                      <PlayIcon className="h-4 w-4 mr-2" />
+                      {compiling
+                        ? "Autocompilazione..."
+                        : `Autocompilazione ${postazione.luogo}`}
+                    </button>
+
+                    {/* Pulsante Reset */}
+                    <button
+                      onClick={() =>
+                        handleReset(postazione.id, postazione.luogo)
+                      }
+                      disabled={compiling}
+                      className="btn-danger flex items-center"
+                      title={`Elimina tutte le assegnazioni di "${
+                        postazione.luogo
+                      }" per il mese ${getMonthName(
+                        selectedMonth.year,
+                        selectedMonth.month
+                      )}`}
+                    >
+                      <TrashIcon className="h-4 w-4 mr-2" />
+                      Reset {postazione.luogo}
+                    </button>
+
+                    {/* Pulsante Export Unificato */}
+                    <button
+                      onClick={() =>
+                        openExportModal(postazione.id, postazione.luogo)
+                      }
+                      disabled={exporting}
+                      className="btn-secondary flex items-center"
+                      title={`Esporta tabella per "${
+                        postazione.luogo
+                      }" nel mese ${getMonthName(
+                        selectedMonth.year,
+                        selectedMonth.month
+                      )}`}
+                    >
+                      <DocumentArrowDownIcon className="h-4 w-4 mr-2" />
+                      {exporting ? "Esportando..." : "Export"}
+                    </button>
+
+                    {/* Pulsante Salva modifiche */}
+                    {(pendingAssignments.size > 0 ||
+                      pendingRemovals.size > 0) && (
+                      <button
+                        onClick={() => savePendingChanges()}
+                        className="btn-primary flex items-center"
+                        title="Salva tutte le modifiche in sospeso"
+                      >
+                        <svg
+                          className="h-4 w-4 mr-2"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        Salva Modifiche
+                      </button>
                     )}
                   </div>
-                  <p className="text-sm text-gray-600">
-                    {postazione.indirizzo}
-                  </p>
-                  <p className="text-sm text-primary-600 font-medium mt-1">
-                    Max proclamatori per turno:{" "}
-                    {postazione.max_proclamatori || 3}
-                  </p>
-                </div>
-
-                <div className="flex space-x-2">
-                  {/* Pulsante Autocompilazione */}
-                  <button
-                    onClick={() =>
-                      executeAutocompilazione(postazione.id, postazione.luogo)
-                    }
-                    disabled={compiling}
-                    className="btn-secondary flex items-center"
-                    title={`Esegui autocompilazione automatica per "${
-                      postazione.luogo
-                    }" nel mese ${getMonthName(
-                      selectedMonth.year,
-                      selectedMonth.month
-                    )}`}
-                  >
-                    <PlayIcon className="h-4 w-4 mr-2" />
-                    {compiling
-                      ? "Autocompilazione..."
-                      : `Autocompilazione ${postazione.luogo}`}
-                  </button>
-
-                  {/* Pulsante Reset */}
-                  <button
-                    onClick={() => handleReset(postazione.id, postazione.luogo)}
-                    disabled={compiling}
-                    className="btn-danger flex items-center"
-                    title={`Elimina tutte le assegnazioni di "${
-                      postazione.luogo
-                    }" per il mese ${getMonthName(
-                      selectedMonth.year,
-                      selectedMonth.month
-                    )}`}
-                  >
-                    <TrashIcon className="h-4 w-4 mr-2" />
-                    Reset {postazione.luogo}
-                  </button>
-
-                  {/* Pulsante Export Unificato */}
-                  <button
-                    onClick={() =>
-                      openExportModal(postazione.id, postazione.luogo)
-                    }
-                    disabled={exporting}
-                    className="btn-secondary flex items-center"
-                    title={`Esporta tabella per "${
-                      postazione.luogo
-                    }" nel mese ${getMonthName(
-                      selectedMonth.year,
-                      selectedMonth.month
-                    )}`}
-                  >
-                    <DocumentArrowDownIcon className="h-4 w-4 mr-2" />
-                    {exporting ? "Esportando..." : "Export"}
-                  </button>
-
-                  {/* Pulsante Salva modifiche */}
-                  {(pendingAssignments.size > 0 ||
-                    pendingRemovals.size > 0) && (
-                    <button
-                      onClick={() => savePendingChanges()}
-                      className="btn-primary flex items-center"
-                      title="Salva tutte le modifiche in sospeso"
-                    >
-                      <svg
-                        className="h-4 w-4 mr-2"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      Salva Modifiche
-                    </button>
-                  )}
                 </div>
               </div>
-            </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ borderRight: '1px solid #d1d5db', boxShadow: '1px 0 0 0 #d1d5db' }}>
-                      Orario
-                    </th>
-                    {data?.dateRange?.map((date) => {
-                      const isPostazioneAttiva = isPostazioneActiveForDate(
-                        postazione,
-                        date
-                      );
-                      return (
-                        <th
-                          key={date}
-                          className={`px-3 py-2 text-center text-xs font-medium uppercase tracking-wider ${
-                            isPostazioneAttiva
-                              ? "text-gray-500"
-                              : "text-gray-300 bg-gray-50"
-                          }`}
-                        >
-                          <div>{getDayName(date)}</div>
-                          <div
-                            className={`text-xs ${
-                              isPostazioneAttiva
-                                ? "text-gray-400"
-                                : "text-gray-200"
-                            }`}
-                          >
-                            {formatDate(date)}
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {postazione.slot_orari?.map((slot) => (
-                    <tr key={slot.id}>
-                      <td className="sticky left-0 z-10 bg-white px-2 py-2 text-center" style={{ borderRight: '1px solid #d1d5db', boxShadow: '1px 0 0 0 #d1d5db' }}>
-                        <div className="flex flex-col items-center justify-center space-y-0.5">
-                          <ClockIcon className="h-4 w-4 text-primary-600" />
-                          <span className="text-xs font-medium text-gray-900 leading-tight">
-                            {formatTime(slot.orario_inizio)}
-                          </span>
-                          <span className="text-xs font-medium text-gray-900 leading-tight">
-                            {formatTime(slot.orario_fine)}
-                          </span>
-                        </div>
-                      </td>
-                      {data?.dateRange?.map((date) => {
-                        // Verifica se questa postazione è attiva per questa data
-                        const isPostazioneAttiva = isPostazioneActiveForDate(
-                          postazione,
-                          date
-                        );
-
-                        if (!isPostazioneAttiva) {
-                          return (
-                            <td
-                              key={`${slot.id}-${date}`}
-                              className="px-3 py-2 bg-gray-50"
-                            ></td>
-                          );
-                        }
-
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th
+                        className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        style={{
+                          borderRight: "1px solid #d1d5db",
+                          boxShadow: "1px 0 0 0 #d1d5db",
+                        }}
+                      >
+                        Orario
+                      </th>
+                      {postazioneDateRange.map((date) => {
                         return (
-                          <td
-                            key={`${slot.id}-${date}`}
-                            className="px-3 py-2"
+                          <th
+                            key={date}
+                            className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500"
                           >
-                            {renderTurnoCell(date, slot, postazione)}
-                          </td>
+                            <div>{getDayName(date)}</div>
+                            <div className="text-xs text-gray-400">
+                              {formatDate(date)}
+                            </div>
+                          </th>
                         );
                       })}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {postazione.slot_orari?.map((slot) => (
+                      <tr key={slot.id}>
+                        <td
+                          className="sticky left-0 z-10 bg-white px-2 py-2 text-center"
+                          style={{
+                            borderRight: "1px solid #d1d5db",
+                            boxShadow: "1px 0 0 0 #d1d5db",
+                          }}
+                        >
+                          <div className="flex flex-col items-center justify-center space-y-0.5">
+                            <ClockIcon className="h-4 w-4 text-primary-600" />
+                            <span className="text-xs font-medium text-gray-900 leading-tight">
+                              {formatTime(slot.orario_inizio)}
+                            </span>
+                            <span className="text-xs font-medium text-gray-900 leading-tight">
+                              {formatTime(slot.orario_fine)}
+                            </span>
+                          </div>
+                        </td>
+                        {postazioneDateRange.map((date) => {
+                          return (
+                            <td
+                              key={`${slot.id}-${date}`}
+                              className="px-3 py-2"
+                            >
+                              {renderTurnoCell(date, slot, postazione)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Modal di selezione formato export */}

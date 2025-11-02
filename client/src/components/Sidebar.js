@@ -13,6 +13,9 @@ import {
   ArrowLeftOnRectangleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  CalendarDaysIcon,
+  BookOpenIcon,
+  CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 import { clsx } from "clsx";
 
@@ -46,6 +49,20 @@ const Sidebar = () => {
       adminOnly: false,
     },
     {
+      key: "miei-turni",
+      label: "I miei turni",
+      icon: CalendarDaysIcon,
+      path: "/miei-turni",
+      adminOnly: false,
+    },
+    {
+      key: "disponibilita",
+      label: "Disponibilità",
+      icon: CheckCircleIcon,
+      path: "/volontari/disponibilita",
+      adminOnly: false,
+    },
+    {
       key: "postazioni",
       label: "Postazioni",
       icon: MapPinIcon,
@@ -73,7 +90,6 @@ const Sidebar = () => {
           path: "/volontari/gestione",
           adminOnly: true,
         },
-        { label: "Disponibilità", path: "/volontari/disponibilita" },
         {
           label: "Riepilogo Disponibilità",
           path: "/volontari/riepilogo-disponibilita",
@@ -111,6 +127,13 @@ const Sidebar = () => {
         { label: "Gestione Turni", path: "/turni/gestione" },
         { label: "Turni Incompleti", path: "/turni/incompleti" },
       ],
+    },
+    {
+      key: "esperienze",
+      label: "Esperienze",
+      icon: BookOpenIcon,
+      path: "/esperienze",
+      adminOnly: false,
     },
     {
       key: "notifiche",

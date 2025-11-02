@@ -150,8 +150,12 @@ const TurniIncompleti = () => {
     }
 
     const date = new Date(dateString);
-    const dayOfWeek = date.getDay();
-    const nostroGiorno = dayOfWeek === 0 ? 1 : dayOfWeek + 1;
+    const dayOfWeek = date.getDay(); // 0 = Domenica, 1 = Lunedì, ..., 6 = Sabato
+
+    // Converti in formato nostro sistema (1 = Lunedì, 2 = Martedì, ..., 7 = Domenica)
+    // JavaScript: 0=Domenica, 1=Lunedì, ..., 6=Sabato
+    // Nostro sistema: 1=Lunedì, 2=Martedì, ..., 7=Domenica
+    const nostroGiorno = dayOfWeek === 0 ? 7 : dayOfWeek;
 
     return postazione.giorni_settimana.includes(nostroGiorno);
   };

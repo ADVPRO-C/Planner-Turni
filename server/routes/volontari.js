@@ -198,10 +198,20 @@ router.get("/:id", async (req, res) => {
 // POST /api/volontari - Crea un nuovo volontario
 router.post("/", authorizeRoles("admin", "super_admin"), async (req, res) => {
   try {
+    console.log("📥 Richiesta creazione volontario:", {
+      body: req.body,
+      user: req.user?.id,
+      ruolo: req.user?.ruolo
+    });
+    
     const { error, value } = volontarioSchema.validate(req.body);
     if (error) {
+      console.error("❌ Errore validazione creazione volontario:", error.details);
+      console.error("Body ricevuto:", JSON.stringify(req.body, null, 2));
       return res.status(400).json({ message: error.details[0].message });
     }
+
+    console.log("✅ Validazione passata:", value);
 
     const { nome, cognome, email, telefono, password, sesso, stato, ruolo } = value;
 
@@ -258,13 +268,27 @@ router.post("/", authorizeRoles("admin", "super_admin"), async (req, res) => {
 
     let passwordHash = null;
     if (password) {
+      console.log("🔐 Hash password in corso...");
       passwordHash = await bcrypt.hash(password, 10);
+      console.log("✅ Password hashata con successo");
     }
+
+    console.log("📝 Query INSERT da eseguire:", {
+      congregazioneId: congregazione.id,
+      nome,
+      cognome,
+      email: email || null,
+      telefono: telefono || null,
+      hasPassword: !!passwordHash,
+      sesso,
+      stato,
+      ruolo
+    });
 
     const newVolontario = await db.one(
       `INSERT INTO volontari (congregazione_id, nome, cognome, email, telefono, password_hash, sesso, stato, ruolo)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING ${VOLONTARIO_FIELDS}`,
+       RETURNING ${VOLONTARIO_FIELDS_NO_PREFIX}`,
       [
         congregazione.id,
         nome,
@@ -278,14 +302,24 @@ router.post("/", authorizeRoles("admin", "super_admin"), async (req, res) => {
       ]
     );
 
+    console.log("✅ Volontario creato con successo:", newVolontario.id);
+
     res.status(201).json({
       ...newVolontario,
       congregazione_codice: congregazione.codice,
       congregazione_nome: congregazione.nome,
     });
   } catch (error) {
-    console.error("Errore nella creazione del volontario:", error);
-    res.status(500).json({ message: "Errore interno del server" });
+    console.error("❌ Errore nella creazione del volontario:", error);
+    console.error("Stack trace:", error.stack);
+    console.error("Dettagli richiesta:", {
+      body: req.body,
+      user: req.user?.id,
+    });
+    res.status(500).json({ 
+      message: "Errore interno del server",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 });
 // PUT /api/volontari/:id - Aggiorna un volontario

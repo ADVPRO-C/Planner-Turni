@@ -23,6 +23,8 @@ import Cronologia from "./pages/Cronologia";
 import Assistenza from "./pages/Assistenza";
 import Impostazioni from "./pages/Impostazioni";
 import Congregazioni from "./pages/Congregazioni";
+import IMieiTurni from "./pages/IMieiTurni";
+import Esperienze from "./pages/Esperienze";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import "./index.css";
 
@@ -105,6 +107,14 @@ function App() {
               }
             />
             <Route
+              path="/miei-turni"
+              element={
+                <ProtectedRoute>
+                  <IMieiTurni />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/postazioni"
               element={
                 <ProtectedRoute>
@@ -165,6 +175,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <TurniIncompleti />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/esperienze"
+              element={
+                <ProtectedRoute>
+                  <Esperienze />
                 </ProtectedRoute>
               }
             />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import toast from "react-hot-toast";
+import { api } from "../utils/api";
 import {
   PlusIcon,
   PencilIcon,
@@ -43,34 +44,21 @@ const GestionePostazioni = () => {
       }
 
       try {
-        const headers = {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        };
-
-        if (activeCongregazione?.id) {
-          headers["X-Congregazione-Id"] = activeCongregazione.id;
-        }
-
-        const response = await fetch("/api/postazioni", {
-          headers,
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          // Assicuriamoci che ogni postazione abbia un array slot_orari
-          const postazioniProcessate = data.map((postazione) => ({
-            ...postazione,
-            slot_orari: postazione.slot_orari || [],
-          }));
-          setPostazioni(postazioniProcessate);
-        } else if (response.status === 401) {
-          toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
-        } else {
-          toast.error("Errore nel caricamento delle postazioni");
-        }
+        const response = await api.get("/postazioni");
+        const data = response.data;
+        // Assicuriamoci che ogni postazione abbia un array slot_orari
+        const postazioniProcessate = data.map((postazione) => ({
+          ...postazione,
+          slot_orari: postazione.slot_orari || [],
+        }));
+        setPostazioni(postazioniProcessate);
       } catch (error) {
         console.error("Errore:", error);
-        toast.error("Errore di connessione. Riprova.");
+        if (error.response?.status === 401) {
+          toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
+        } else {
+          toast.error(error.response?.data?.message || "Errore nel caricamento delle postazioni");
+        }
       } finally {
         setLoading(false);
       }
@@ -181,32 +169,16 @@ const GestionePostazioni = () => {
     }
 
     try {
-        const headers = {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        };
-        if (activeCongregazione?.id) {
-          headers["X-Congregazione-Id"] = activeCongregazione.id;
-        }
-
-        const response = await fetch(`/api/postazioni/${postazioneId}`, {
-          method: "DELETE",
-          headers,
-        });
-
-      if (response.ok) {
+        await api.delete(`/postazioni/${postazioneId}`);
         setPostazioni((prev) => prev.filter((p) => p.id !== postazioneId));
         toast.success("Postazione eliminata con successo!");
-      } else if (response.status === 401) {
-        toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
-      } else {
-        const errorData = await response.json();
-        toast.error(
-          errorData.message || "Errore nell'eliminazione della postazione"
-        );
-      }
     } catch (error) {
       console.error("Errore:", error);
-      toast.error("Errore di connessione. Riprova.");
+      if (error.response?.status === 401) {
+        toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
+      } else {
+        toast.error(error.response?.data?.message || "Errore nell'eliminazione della postazione");
+      }
     }
   };
 
@@ -227,44 +199,32 @@ const GestionePostazioni = () => {
         return;
       }
 
-      const headers = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      };
-      if (activeCongregazione?.id) {
-        headers["X-Congregazione-Id"] = activeCongregazione.id;
-      }
+      const response = await api.put(`/postazioni/${postazioneId}`, {
+        stato: newStato,
+        // Mantieni gli altri campi invariati
+        luogo: postazioni.find(p => p.id === postazioneId)?.luogo,
+        indirizzo: postazioni.find(p => p.id === postazioneId)?.indirizzo,
+        giorni_settimana: postazioni.find(p => p.id === postazioneId)?.giorni_settimana || [],
+        max_proclamatori: postazioni.find(p => p.id === postazioneId)?.max_proclamatori || 3,
+        slot_orari: postazioni.find(p => p.id === postazioneId)?.slot_orari || [],
+      });
 
-      const response = await fetch(
-        `/api/postazioni/${postazioneId}/toggle-stato`,
-        {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify({ stato: newStato }),
-        }
+      const updatedPostazione = response.data;
+      setPostazioni((prev) =>
+        prev.map((p) => (p.id === postazioneId ? updatedPostazione : p))
       );
-
-      if (response.ok) {
-        const updatedPostazione = await response.json();
-        setPostazioni((prev) =>
-          prev.map((p) => (p.id === postazioneId ? updatedPostazione : p))
-        );
-        toast.success(
-          `Postazione ${
-            newStato === "attiva" ? "attivata" : "disattivata"
-          } con successo!`
-        );
-      } else if (response.status === 401) {
-        toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
-      } else {
-        const errorData = await response.json();
-        toast.error(
-          errorData.message || "Errore nel cambio di stato della postazione"
-        );
-      }
+      toast.success(
+        `Postazione ${
+          newStato === "attiva" ? "attivata" : "disattivata"
+        } con successo!`
+      );
     } catch (error) {
       console.error("Errore:", error);
-      toast.error("Errore di connessione. Riprova.");
+      if (error.response?.status === 401) {
+        toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
+      } else {
+        toast.error(error.response?.data?.message || "Errore nel cambio di stato della postazione");
+      }
     }
   };
 
@@ -279,46 +239,32 @@ const GestionePostazioni = () => {
           return;
         }
 
-        const headers = {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        };
-        if (activeCongregazione?.id) {
-          headers["X-Congregazione-Id"] = activeCongregazione.id;
-        }
-
-        const response = await fetch("/api/postazioni/sync-disponibilita", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            congregazione_id: activeCongregazione?.id,
-          }),
+        const response = await api.post("/postazioni/sync-disponibilita", {
+          congregazione_id: activeCongregazione?.id,
         });
 
-        if (response.ok) {
-          const result = await response.json();
-          toast.success(
-            `Sincronizzazione completata! Eliminate ${result.deletedCount} disponibilità non coerenti.`
-          );
+        const result = response.data;
+        toast.success(
+          `Sincronizzazione completata! Eliminate ${result.deletedCount} disponibilità non coerenti.`
+        );
 
-          // Mostra statistiche dettagliate
-          if (result.stats && result.stats.length > 0) {
-            const statsMessage = result.stats
-              .map(
-                (stat) =>
-                  `${stat.luogo}: ${stat.disponibilita_rimanenti} disponibilità (${stat.data_inizio} - ${stat.data_fine})`
-              )
-              .join("\n");
-            console.log("Statistiche sincronizzazione:", statsMessage);
-          }
-        } else if (response.status === 401) {
-          toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
-        } else {
-          toast.error("Errore nella sincronizzazione");
+        // Mostra statistiche dettagliate
+        if (result.stats && result.stats.length > 0) {
+          const statsMessage = result.stats
+            .map(
+              (stat) =>
+                `${stat.luogo}: ${stat.disponibilita_rimanenti} disponibilità (${stat.data_inizio} - ${stat.data_fine})`
+            )
+            .join("\n");
+          console.log("Statistiche sincronizzazione:", statsMessage);
         }
       } catch (error) {
         console.error("Errore:", error);
-        toast.error("Errore di connessione. Riprova.");
+        if (error.response?.status === 401) {
+          toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
+        } else {
+          toast.error(error.response?.data?.message || "Errore nella sincronizzazione");
+        }
       }
     }
   };
@@ -377,59 +323,44 @@ const GestionePostazioni = () => {
       }
 
       const isEditing = editingPostazione !== null;
-      const url = isEditing
-        ? `/api/postazioni/${editingPostazione.id}`
-        : "/api/postazioni";
-      const method = isEditing ? "PUT" : "POST";
+      let response;
 
-      const headers = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("token")}`,
-      };
-      if (activeCongregazione?.id) {
-        headers["X-Congregazione-Id"] = activeCongregazione.id;
-      }
-
-      const response = await fetch(url, {
-        method: method,
-        headers,
-        body: JSON.stringify(postazioneData),
-      });
-
-      if (response.ok) {
-        const updatedPostazione = await response.json();
-
-        if (isEditing) {
-          // Aggiorna la postazione esistente nella lista
-          setPostazioni((prev) =>
-            prev.map((p) =>
-              p.id === editingPostazione.id ? updatedPostazione : p
-            )
-          );
-          toast.success("Postazione aggiornata con successo!");
-        } else {
-          // Aggiungi la nuova postazione alla lista
-          setPostazioni((prev) => [...prev, updatedPostazione]);
-          toast.success("Postazione creata con successo!");
-        }
-
-        setShowModal(false);
-        setEditingPostazione(null);
-        resetForm();
-      } else if (response.status === 401) {
-        toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
+      if (isEditing) {
+        response = await api.put(`/postazioni/${editingPostazione.id}`, postazioneData);
       } else {
-        const errorData = await response.json();
-        toast.error(
-          errorData.message ||
-            `Errore nella ${
-              isEditing ? "modifica" : "creazione"
-            } della postazione`
-        );
+        response = await api.post("/postazioni", postazioneData);
       }
+
+      const updatedPostazione = response.data;
+
+      if (isEditing) {
+        // Aggiorna la postazione esistente nella lista
+        setPostazioni((prev) =>
+          prev.map((p) =>
+            p.id === editingPostazione.id ? updatedPostazione : p
+          )
+        );
+        toast.success("Postazione aggiornata con successo!");
+      } else {
+        // Aggiungi la nuova postazione alla lista
+        setPostazioni((prev) => [...prev, updatedPostazione]);
+        toast.success("Postazione creata con successo!");
+      }
+
+      setShowModal(false);
+      setEditingPostazione(null);
+      resetForm();
     } catch (error) {
       console.error("Errore:", error);
-      toast.error("Errore di connessione. Riprova.");
+      if (error.response?.status === 401) {
+        toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
+      } else {
+        const isEditing = editingPostazione !== null;
+        toast.error(
+          error.response?.data?.message ||
+            `Errore nella ${isEditing ? "modifica" : "creazione"} della postazione`
+        );
+      }
     }
   };
 

@@ -3,8 +3,13 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const Joi = require("joi");
+const nodemailer = require("nodemailer");
+const { authenticateToken } = require("../middleware/auth");
 
 const router = express.Router();
+
+// Tutte le route di assistenza richiedono autenticazione
+router.use(authenticateToken);
 
 // Configurazione multer per upload allegati
 const storage = multer.diskStorage({
@@ -133,30 +138,169 @@ const assistenzaSchema = Joi.object({
   ruoloUtente: Joi.string().required(),
 });
 
-// Funzione per inviare email (simulata per ora)
+// Configurazione transporter email
+// TODO: Quando implementerai Resend API, sostituisci questa configurazione
+// con quella di Resend (vedi documentazione: https://resend.com/docs/node/introduction)
+const createTransporter = () => {
+  // Se sono presenti variabili d'ambiente per SMTP, usale
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    return nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT || 587,
+      secure: process.env.SMTP_PORT == 465, // true per 465, false per altri
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+
+  // Fallback: se non ci sono credenziali SMTP, usa Gmail (richiede app password)
+  // Nota: Per Gmail devi generare una "App Password" dalle impostazioni account
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
+  }
+
+  // Se non ci sono credenziali, restituisci null (verrà gestito in inviaEmail)
+  return null;
+};
+
+// Funzione per inviare email
 const inviaEmail = async (datiRichiesta, allegati = []) => {
   try {
-    // Qui implementeresti l'invio email reale con nodemailer o servizio simile
-    console.log("📧 Invio email di assistenza:");
-    console.log("Destinatario: advprocomunicazione@gmail.com");
-    console.log(
-      "Oggetto:",
-      `[${datiRichiesta.priorita.toUpperCase()}] ${datiRichiesta.argomento} - ${
-        datiRichiesta.titolo
-      } (da ${datiRichiesta.nomeUtente})`
-    );
-    console.log("Dati:", datiRichiesta);
-    console.log(
-      "Allegati:",
-      allegati.map((f) => f.filename)
-    );
+    const EMAIL_DESTINATARIO = process.env.ASSISTENZA_EMAIL || "advprocomunicazione@gmail.com";
+    
+    console.log("📧 Preparazione email di assistenza:");
+    console.log("Destinatario:", EMAIL_DESTINATARIO);
+    
+    const oggetto = `[${datiRichiesta.priorita.toUpperCase()}] ${datiRichiesta.argomento} - ${
+      datiRichiesta.titolo
+    } (da ${datiRichiesta.nomeUtente})`;
 
-    // Simula invio email
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    console.log("Oggetto:", oggetto);
+    console.log("Allegati:", allegati.length);
 
-    return { success: true, messageId: `msg_${Date.now()}` };
+    // Crea il transporter
+    const transporter = createTransporter();
+
+    if (!transporter) {
+      console.warn("⚠️ Nessuna configurazione email trovata. L'email non verrà inviata.");
+      console.warn("⚠️ Configura SMTP_HOST, SMTP_USER, SMTP_PASS o GMAIL_USER, GMAIL_APP_PASSWORD");
+      
+      // In modalità sviluppo, restituisci successo simulato
+      if (process.env.NODE_ENV === "development") {
+        console.log("⚠️ Modalità sviluppo: email simulata");
+        return { success: true, messageId: `dev_msg_${Date.now()}`, simulated: true };
+      }
+      
+      throw new Error("Configurazione email non trovata");
+    }
+
+    // Prepara il corpo dell'email HTML
+    const argomentoLabels = {
+      "problema-tecnico": "Problema Tecnico",
+      "domanda": "Domanda",
+      "nuova-funzionalita": "Aggiunta Nuova Funzionalità"
+    };
+
+    const prioritaBadge = datiRichiesta.priorita === "urgente" 
+      ? '<span style="background-color: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">URGENTE</span>'
+      : '<span style="background-color: #3b82f6; color: white; padding: 4px 8px; border-radius: 4px;">Normale</span>';
+
+    const htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1f2937; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
+          Nuova Richiesta di Assistenza
+        </h2>
+        
+        <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p><strong>Priorità:</strong> ${prioritaBadge}</p>
+          <p><strong>Argomento:</strong> ${argomentoLabels[datiRichiesta.argomento] || datiRichiesta.argomento}</p>
+          <p><strong>Titolo:</strong> ${datiRichiesta.titolo}</p>
+        </div>
+
+        <div style="margin: 20px 0;">
+          <h3 style="color: #374151;">Informazioni Richiedente</h3>
+          <ul style="list-style: none; padding: 0;">
+            <li><strong>Nome:</strong> ${datiRichiesta.nomeUtente}</li>
+            <li><strong>Ruolo:</strong> ${datiRichiesta.ruoloUtente}</li>
+            <li><strong>Email:</strong> <a href="mailto:${datiRichiesta.email}">${datiRichiesta.email}</a></li>
+            ${datiRichiesta.telefono ? `<li><strong>Telefono:</strong> ${datiRichiesta.telefono}</li>` : ""}
+          </ul>
+        </div>
+
+        <div style="margin: 20px 0;">
+          <h3 style="color: #374151;">Descrizione</h3>
+          <div style="background-color: #ffffff; border-left: 4px solid #3b82f6; padding: 15px; margin: 10px 0;">
+            ${datiRichiesta.descrizione.replace(/\n/g, "<br>")}
+          </div>
+        </div>
+
+        ${allegati.length > 0 ? `
+          <div style="margin: 20px 0;">
+            <h3 style="color: #374151;">Allegati (${allegati.length})</h3>
+            <ul>
+              ${allegati.map(file => `<li>${file.originalname} (${(file.size / 1024).toFixed(2)} KB)</li>`).join("")}
+            </ul>
+          </div>
+        ` : ""}
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
+          <p>Data invio: ${new Date(datiRichiesta.dataInvio).toLocaleString("it-IT")}</p>
+          <p>IP richiedente: ${datiRichiesta.ip}</p>
+        </div>
+      </div>
+    `;
+
+    // Prepara gli allegati per nodemailer
+    const attachments = allegati.map(file => ({
+      filename: file.originalname,
+      path: file.path,
+      contentType: file.mimetype,
+    }));
+
+    // Invia l'email
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || `"Sistema Planner" <${process.env.GMAIL_USER || "noreply@planner.com"}>`,
+      to: EMAIL_DESTINATARIO,
+      subject: oggetto,
+      html: htmlBody,
+      text: `
+Nuova Richiesta di Assistenza
+
+Priorità: ${datiRichiesta.priorita.toUpperCase()}
+Argomento: ${argomentoLabels[datiRichiesta.argomento] || datiRichiesta.argomento}
+Titolo: ${datiRichiesta.titolo}
+
+Richiedente:
+- Nome: ${datiRichiesta.nomeUtente}
+- Ruolo: ${datiRichiesta.ruoloUtente}
+- Email: ${datiRichiesta.email}
+${datiRichiesta.telefono ? `- Telefono: ${datiRichiesta.telefono}` : ""}
+
+Descrizione:
+${datiRichiesta.descrizione}
+
+${allegati.length > 0 ? `Allegati: ${allegati.map(f => f.originalname).join(", ")}` : ""}
+
+Data invio: ${new Date(datiRichiesta.dataInvio).toLocaleString("it-IT")}
+IP: ${datiRichiesta.ip}
+      `,
+      attachments: attachments,
+    });
+
+    console.log("✅ Email inviata con successo!");
+    console.log("Message ID:", info.messageId);
+
+    return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error("Errore invio email:", error);
+    console.error("❌ Errore invio email:", error);
     throw error;
   }
 };
@@ -169,12 +313,8 @@ router.post("/invia", upload.array("allegato", 3), async (req, res) => {
     // Estrai i dati dal form
     const formData = { ...req.body };
 
-    // Rimuovi i campi degli allegati dal body per la validazione
-    Object.keys(formData).forEach((key) => {
-      if (key.startsWith("allegato_")) {
-        delete formData[key];
-      }
-    });
+    // Rimuovi eventuali campi non validi dal body per la validazione
+    // Gli allegati vengono gestiti da multer e sono in req.files
 
     // Validazione dati
     const { error, value } = assistenzaSchema.validate(formData);

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { api } from "../utils/api";
 import toast from "react-hot-toast";
 import {
   QuestionMarkCircleIcon,
@@ -176,37 +177,37 @@ const Assistenza = () => {
       formDataToSend.append("nomeUtente", `${user?.nome} ${user?.cognome}`);
       formDataToSend.append("ruoloUtente", user?.ruolo || "volontario");
 
-      // Aggiungi allegati
-      allegati.forEach((file, index) => {
-        formDataToSend.append(`allegato_${index}`, file);
+      // Aggiungi allegati - IMPORTANTE: il nome del campo deve essere "allegato" per multer
+      allegati.forEach((file) => {
+        formDataToSend.append("allegato", file);
       });
 
-      // Invia la richiesta
-      const response = await fetch("/api/assistenza/invia", {
-        method: "POST",
-        body: formDataToSend,
+      // Invia la richiesta usando api helper
+      // Per FormData, axios gestisce automaticamente Content-Type multipart/form-data
+      // NON impostare manualmente Content-Type, axios lo farà automaticamente con il boundary corretto
+      await api.post("/assistenza/invia", formDataToSend);
+
+      toast.success("Richiesta di assistenza inviata con successo!");
+
+      // Reset del form
+      setFormData({
+        argomento: "",
+        titolo: "",
+        priorita: "normale",
+        email: user?.email || "",
+        telefono: "",
+        descrizione: "",
       });
-
-      if (response.ok) {
-        toast.success("Richiesta di assistenza inviata con successo!");
-
-        // Reset del form
-        setFormData({
-          argomento: "",
-          titolo: "",
-          priorita: "normale",
-          email: user?.email || "",
-          telefono: "",
-          descrizione: "",
-        });
-        setAllegati([]);
-      } else {
-        const error = await response.json();
-        toast.error(error.message || "Errore nell'invio della richiesta");
-      }
+      setAllegati([]);
     } catch (error) {
       console.error("Errore nell'invio:", error);
-      toast.error("Errore di connessione. Riprova più tardi.");
+      if (error.response?.status === 400) {
+        toast.error(error.response?.data?.details || error.response?.data?.message || "Errore nella validazione dei dati");
+      } else if (error.response?.status === 401) {
+        toast.error("Sessione scaduta. Effettua nuovamente l'accesso.");
+      } else {
+        toast.error(error.response?.data?.message || "Errore di connessione. Riprova più tardi.");
+      }
     } finally {
       setLoading(false);
     }
