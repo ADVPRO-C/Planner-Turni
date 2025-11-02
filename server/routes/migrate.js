@@ -29,10 +29,39 @@ router.post("/supabase-to-railway", async (req, res) => {
 
     console.log("🚀 Avvio migrazione da Supabase a Railway...");
 
-    // Configurazione con SSL per Supabase
+    // Configurazione con SSL per Supabase + forzatura IPv4
+    const dns = require("dns");
+    
+    // Forza IPv4 per Railway (non supporta IPv6 esterni)
     const supabaseConfig = {
       connectionString: SUPABASE_URL,
       ssl: { rejectUnauthorized: false },
+      // Forza risoluzione DNS IPv4
+      lookup: (hostname, options, callback) => {
+        dns.lookup(
+          hostname,
+          { family: 4, hints: dns.ADDRCONFIG },
+          (err4, address4, family4) => {
+            if (!err4) {
+              callback(null, address4, family4);
+            } else {
+              // Fallback IPv6 solo se IPv4 fallisce
+              dns.lookup(
+                hostname,
+                { family: 6, hints: dns.ADDRCONFIG },
+                (err6, address6, family6) => {
+                  if (!err6) {
+                    console.warn(`⚠️ Usando IPv6 per ${hostname} (IPv4 non disponibile)`);
+                    callback(null, address6, family6);
+                  } else {
+                    callback(err4, null, null);
+                  }
+                }
+              );
+            }
+          }
+        );
+      },
     };
 
     const supabaseDb = pgp(supabaseConfig);
