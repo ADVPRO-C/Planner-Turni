@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "jest"
+    "test": "jest",
+    "migrate:supabase-to-railway": "node scripts/migrate-supabase-to-railway.js",
+    "init:railway-db": "node scripts/init-railway-db.js"
   },
   "dependencies": {
     "axios": "^1.11.0",

@@ -35,28 +35,58 @@ if (process.env.DATABASE_URL) {
         process.env.DB_CONNECTION_TIMEOUT || "10000",
         10
       ),
-      lookup: (hostname, options, callback) =>
+      // Tentativo di connessione con gestione IPv4/IPv6
+      // Railway può avere problemi con IPv6 esterni, quindi proviamo prima IPv4
+      lookup: (hostname, options, callback) => {
+        console.log(`🔍 Tentativo di risoluzione DNS per ${hostname}...`);
+
+        // Prova prima IPv4
         dns.lookup(
           hostname,
           {
-            ...options,
             family: 4,
-            hints: dns.ADDRCONFIG | dns.V4MAPPED,
+            hints: dns.ADDRCONFIG,
           },
-          (err, address, family) => {
-            if (err) {
-              console.error(
-                `❌ Risoluzione DNS fallita per ${hostname}:`,
-                err.message
-              );
-            } else {
+          (err4, address4, family4) => {
+            if (!err4) {
               console.log(
-                `🌐 Risolto ${hostname} -> ${address} (IPv${family})`
+                `✅ Risolto ${hostname} -> ${address4} (IPv${family4})`
+              );
+              callback(null, address4, family4);
+            } else {
+              // Se IPv4 fallisce, prova IPv6 (per Supabase gratuito)
+              console.warn(
+                `⚠️ IPv4 non disponibile per ${hostname}, provo IPv6...`
+              );
+              dns.lookup(
+                hostname,
+                {
+                  family: 6,
+                  hints: dns.ADDRCONFIG,
+                },
+                (err6, address6, family6) => {
+                  if (!err6) {
+                    console.log(
+                      `✅ Risolto ${hostname} -> ${address6} (IPv${family6})`
+                    );
+                    console.warn(
+                      `⚠️ ATTENZIONE: Usando IPv6. Se Railway non supporta IPv6 esterni, la connessione potrebbe fallire.`
+                    );
+                    callback(null, address6, family6);
+                  } else {
+                    console.error(
+                      `❌ Risoluzione DNS fallita per ${hostname}:`
+                    );
+                    console.error(`   - IPv4: ${err4.message}`);
+                    console.error(`   - IPv6: ${err6.message}`);
+                    callback(err4, null, null);
+                  }
+                }
               );
             }
-            callback(err, address, family);
           }
-        ),
+        );
+      },
     };
   } catch (error) {
     console.error(
