@@ -11,7 +11,9 @@ if (process.env.DATABASE_URL) {
   // pg-promise accetta direttamente la connection string
   config = process.env.DATABASE_URL;
 } else {
-  console.warn("⚠️ DATABASE_URL non trovata, usando variabili separate o default");
+  console.warn(
+    "⚠️ DATABASE_URL non trovata, usando variabili separate o default"
+  );
   console.log("🔍 Variabili ambiente:", {
     DB_HOST: process.env.DB_HOST || "localhost (default)",
     DB_PORT: process.env.DB_PORT || "5432 (default)",

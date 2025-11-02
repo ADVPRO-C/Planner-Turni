@@ -4,6 +4,13 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
+// Debug: verifica variabili ambiente all'avvio
+console.log("🔍 DEBUG VARIABILI AMBIENTE ALL'AVVIO:");
+console.log("- DATABASE_URL:", process.env.DATABASE_URL ? "✅ PRESENTE" : "❌ ASSENTE");
+console.log("- JWT_SECRET:", process.env.JWT_SECRET ? "✅ PRESENTE" : "❌ ASSENTE");
+console.log("- NODE_ENV:", process.env.NODE_ENV || "❌ NON SETTATO");
+console.log("- PORT:", process.env.PORT || "NON SETTATO");
+
 const authRoutes = require("./routes/auth");
 const postazioniRoutes = require("./routes/postazioni");
 const volontariRoutes = require("./routes/volontari");
