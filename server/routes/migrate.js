@@ -7,9 +7,17 @@ const pgp = require("pg-promise")();
 
 router.post("/supabase-to-railway", async (req, res) => {
   try {
-    const SUPABASE_URL =
-      process.env.SUPABASE_DATABASE_URL ||
-      "postgresql://postgres:2vQ-i60MqwHG@db.wwcgryzbgvxfviwcjnkg.supabase.co:5432/postgres";
+    // Prendi connection string Supabase (deve essere configurata come variabile)
+    const SUPABASE_URL = process.env.SUPABASE_DATABASE_URL;
+    
+    if (!SUPABASE_URL) {
+      return res.status(400).json({
+        error: "SUPABASE_DATABASE_URL non configurata",
+        message: "Aggiungi la variabile SUPABASE_DATABASE_URL su Railway con la connection string di Supabase",
+      });
+    }
+
+    // RAILWAY_URL è il database corrente (quello configurato in DATABASE_URL)
     const RAILWAY_URL = process.env.DATABASE_URL;
 
     if (!RAILWAY_URL) {
