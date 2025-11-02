@@ -117,10 +117,18 @@ const GestioneVolontari = () => {
       );
     }
 
+    // Filtro super_admin: escludi i super_admin se l'utente corrente NON è super_admin
+    // (il backend già li filtra, ma aggiungiamo un doppio controllo lato client)
+    if (user?.ruolo !== "super_admin") {
+      filtered = filtered.filter(
+        (volontario) => volontario.ruolo !== "super_admin"
+      );
+    }
+
     setFilteredVolontari(filtered);
     // Reset alla prima pagina quando cambiano i filtri
     setPagination((prev) => ({ ...prev, page: 1 }));
-  }, [allVolontari, searchInput, filters.stato, filters.sesso]);
+  }, [allVolontari, searchInput, filters.stato, filters.sesso, user?.ruolo]);
 
   // Popola il form quando si seleziona un volontario per la modifica
   useEffect(() => {
@@ -747,8 +755,18 @@ const GestioneVolontari = () => {
                     {volontario.turni_completati || "0"}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                      {volontario.ruolo === "admin"
+                    <span
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        volontario.ruolo === "super_admin"
+                          ? "bg-red-100 text-red-800"
+                          : volontario.ruolo === "admin"
+                          ? "bg-purple-100 text-purple-800"
+                          : "bg-blue-100 text-blue-800"
+                      }`}
+                    >
+                      {volontario.ruolo === "super_admin"
+                        ? "Super Admin"
+                        : volontario.ruolo === "admin"
                         ? "Amministratore"
                         : "Volontario"}
                     </span>

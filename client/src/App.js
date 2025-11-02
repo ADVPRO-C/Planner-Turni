@@ -26,6 +26,9 @@ import Impostazioni from "./pages/Impostazioni";
 import Congregazioni from "./pages/Congregazioni";
 import IMieiTurni from "./pages/IMieiTurni";
 import Esperienze from "./pages/Esperienze";
+import Autorizzazioni from "./pages/Autorizzazioni";
+import Istruzioni from "./pages/Istruzioni";
+import ContattoResponsabile from "./pages/ContattoResponsabile";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import "./index.css";
 
@@ -187,6 +190,30 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Esperienze />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/documenti/autorizzazioni"
+              element={
+                <ProtectedRoute>
+                  <Autorizzazioni />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/documenti/istruzioni"
+              element={
+                <ProtectedRoute>
+                  <Istruzioni />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/documenti/contatto-responsabile"
+              element={
+                <ProtectedRoute>
+                  <ContattoResponsabile />
                 </ProtectedRoute>
               }
             />

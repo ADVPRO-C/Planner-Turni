@@ -161,35 +161,49 @@ const TurniIncompleti = () => {
   };
 
   // Ottiene le assegnazioni esistenti per una data, slot e postazione
+  // Filtra solo le assegnazioni con stato "assegnato" o "completato" (esclude "cancellato")
   const getExistingAssignments = (date, slotOrarioId, postazioneId) => {
     if (!data?.assegnazioni) return [];
 
     return data.assegnazioni.filter((a) => {
-      // Controllo di sicurezza per evitare errori con data undefined
-      if (!a.data) {
+      // Filtra solo le assegnazioni con stato valido (assegnato o completato)
+      // Escludi quelle cancellate
+      const statoValido = a.assegnazione_stato === "assegnato" || a.assegnazione_stato === "completato";
+      if (!statoValido) {
+        return false;
+      }
+
+      // Usa data_turno (dal backend) o data (se presente)
+      const dataAssegnazione = a.data_turno || a.data;
+      if (!dataAssegnazione) {
         console.warn("Assegnazione senza data trovata:", a);
         return false;
       }
 
       let assegnazioneDate;
-      if (typeof a.data === "string") {
-        assegnazioneDate = a.data.split("T")[0];
-      } else if (a.data instanceof Date) {
-        assegnazioneDate = a.data.toISOString().split("T")[0];
+      if (typeof dataAssegnazione === "string") {
+        assegnazioneDate = dataAssegnazione.split("T")[0];
+      } else if (dataAssegnazione instanceof Date) {
+        assegnazioneDate = dataAssegnazione.toISOString().split("T")[0];
       } else {
-        console.warn("Formato data non riconosciuto:", a.data);
+        console.warn("Formato data non riconosciuto:", dataAssegnazione);
         return false;
       }
 
+      // Verifica anche che ci sia un volontario_id (per escludere righe senza volontario)
       return (
         assegnazioneDate === date &&
         a.slot_orario_id === slotOrarioId &&
-        a.postazione_id === postazioneId
+        a.postazione_id === postazioneId &&
+        a.volontario_id // Deve avere un volontario assegnato
       );
     });
   };
 
   // Verifica se un turno è incompleto (non assegnato o parzialmente assegnato)
+  // Un turno è completo se:
+  // 1. Ha almeno un'assegnazione con stato "completato" (già eseguito) - SEMPRE completo
+  // 2. Ha almeno max_proclamatori volontari assegnati con stato "assegnato"
   const isTurnoIncompleto = (date, slot, postazione) => {
     const existingAssignments = getExistingAssignments(
       date,
@@ -198,11 +212,26 @@ const TurniIncompleti = () => {
     );
     const maxProclamatori = postazione.max_proclamatori || 3;
 
-    // Turno incompleto se non ha assegnazioni o ha meno del massimo
-    return (
-      existingAssignments.length === 0 ||
-      existingAssignments.length < maxProclamatori
-    );
+    // Se non ci sono assegnazioni, il turno è incompleto
+    if (existingAssignments.length === 0) {
+      return true;
+    }
+
+    // Conta i volontari unici (per evitare di contare lo stesso volontario più volte)
+    const volontariUnici = new Set(existingAssignments.map(a => a.volontario_id));
+    const numeroVolontari = volontariUnici.size;
+
+    // Se c'è almeno un'assegnazione con stato "completato", il turno è completo
+    // (indica che è già stato eseguito, quindi non è più "incompleto")
+    const haTurnoCompletato = existingAssignments.some(a => a.assegnazione_stato === "completato");
+    
+    if (haTurnoCompletato) {
+      return false; // Turno completato = completo (non incompleto)
+    }
+
+    // Altrimenti, verifica se ci sono abbastanza volontari assegnati
+    // Un turno è completo se ha almeno max_proclamatori volontari con stato "assegnato"
+    return numeroVolontari < maxProclamatori;
   };
 
   // Placeholder per la funzione di richiesta disponibilità via email
@@ -229,7 +258,10 @@ const TurniIncompleti = () => {
       postazione.id
     );
     const maxProclamatori = postazione.max_proclamatori || 3;
-    const assegnati = existingAssignments.length;
+    
+    // Conta i volontari unici (per evitare di contare lo stesso volontario più volte)
+    const volontariUnici = new Set(existingAssignments.map(a => a.volontario_id));
+    const assegnati = volontariUnici.size;
     const mancanti = maxProclamatori - assegnati;
 
     return (
@@ -241,11 +273,14 @@ const TurniIncompleti = () => {
         </div>
         {assegnati > 0 && (
           <div className="text-xs text-red-600 mb-2">
-            {existingAssignments.map((assignment, index) => (
-              <div key={index} className="mb-1">
-                {assignment.nome} {assignment.cognome}
-              </div>
-            ))}
+            {Array.from(volontariUnici).map((volontarioId) => {
+              const assignment = existingAssignments.find(a => a.volontario_id === volontarioId);
+              return assignment ? (
+                <div key={volontarioId} className="mb-1">
+                  {assignment.nome} {assignment.cognome}
+                </div>
+              ) : null;
+            })}
           </div>
         )}
         <div className="text-xs text-red-800 font-semibold mb-2">

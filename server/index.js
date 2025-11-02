@@ -13,6 +13,7 @@ const cronologiaRoutes = require("./routes/cronologia");
 const assistenzaRoutes = require("./routes/assistenza");
 const congregazioniRoutes = require("./routes/congregazioni");
 const esperienzeRoutes = require("./routes/esperienze");
+const documentiRoutes = require("./routes/documenti");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -53,6 +54,8 @@ app.use("/api/congregazioni", congregazioniRoutes);
 console.log("✓ Route congregazioni caricate");
 app.use("/api/esperienze", esperienzeRoutes);
 console.log("✓ Route esperienze caricate");
+app.use("/api/documenti", documentiRoutes);
+console.log("✓ Route documenti caricate");
 
 // Route di test
 app.get("/api/health", (req, res) => {

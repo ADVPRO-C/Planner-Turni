@@ -1,6 +1,6 @@
 const db = require("../config/database");
 
-const ALLOWED_CONGREGATION_TABLES = new Set(['volontari', 'postazioni', 'slot_orari', 'disponibilita', 'assegnazioni', 'assegnazioni_volontari', 'esperienze']);
+const ALLOWED_CONGREGATION_TABLES = new Set(['volontari', 'postazioni', 'slot_orari', 'disponibilita', 'assegnazioni', 'assegnazioni_volontari', 'esperienze', 'documenti_autorizzazioni']);
 
 const normalizeCode = (code) => (code ? code.toString().padStart(3, '0') : null);
 

@@ -502,7 +502,7 @@ router.post(
       }
 
       const volontariRows = await db.any(
-        `SELECT id, congregazione_id FROM volontari WHERE id = ANY($1::int[])`,
+        `SELECT id, congregazione_id, ruolo FROM volontari WHERE id = ANY($1::int[])`,
         [volontari]
       );
 
@@ -510,11 +510,26 @@ router.post(
         return res.status(400).json({ message: "Uno o più volontari non esistono" });
       }
 
-      const invalid = volontariRows.find((v) => v.congregazione_id !== turnoCongId);
-      if (invalid) {
+      const invalidCongregazione = volontariRows.find((v) => v.congregazione_id !== turnoCongId);
+      if (invalidCongregazione) {
         return res
           .status(403)
           .json({ message: "Volontario non appartiene alla congregazione del turno" });
+      }
+
+      const superAdmin = volontariRows.find((v) => v.ruolo === 'super_admin');
+      if (superAdmin) {
+        return res
+          .status(403)
+          .json({ message: "Non è possibile assegnare un super admin a un turno" });
+      }
+
+      // Verifica che tutti i volontari siano attivi
+      const inattivi = volontariRows.filter((v) => v.stato === 'non_attivo');
+      if (inattivi.length > 0) {
+        return res
+          .status(403)
+          .json({ message: "Non è possibile assegnare volontari inattivi a un turno" });
       }
 
       await db.tx(async (t) => {
@@ -552,14 +567,24 @@ router.post(
 
       const { data_turno, slot_orario_id, postazione_id, volontario_id } = value;
 
-      const volontarioCongId = await ensureEntityAccess(
-        req,
-        "volontari",
-        volontario_id
+      const volontarioRow = await db.oneOrNone(
+        `SELECT id, congregazione_id, ruolo, stato FROM volontari WHERE id = $1`,
+        [volontario_id]
       );
-      if (!volontarioCongId) {
+      
+      if (!volontarioRow) {
         return res.status(404).json({ message: "Volontario non trovato" });
       }
+
+      if (volontarioRow.ruolo === 'super_admin') {
+        return res.status(403).json({ message: "Non è possibile assegnare un super admin a un turno" });
+      }
+
+      if (volontarioRow.stato === 'non_attivo') {
+        return res.status(403).json({ message: "Non è possibile assegnare un volontario inattivo a un turno" });
+      }
+
+      const volontarioCongId = volontarioRow.congregazione_id;
 
       const postazioneCongId = await ensureEntityAccess(
         req,
@@ -921,6 +946,7 @@ router.post(
                   AND d.stato = 'disponibile'
                   AND d.congregazione_id = $3
                   AND v.stato = 'attivo'
+                  AND v.ruolo != 'super_admin'
                   AND NOT EXISTS (
                     SELECT 1 FROM assegnazioni_volontari av2 
                     WHERE av2.assegnazione_id = $4 
@@ -959,6 +985,7 @@ router.post(
                   AND d.stato = 'disponibile'
                   AND d.congregazione_id = $3
                   AND v.stato = 'attivo'
+                  AND v.ruolo != 'super_admin'
                 ORDER BY 
                   CASE WHEN v.sesso = 'M' THEN 0 ELSE 1 END,
                   COALESCE((
@@ -1228,6 +1255,7 @@ router.get(
         JOIN postazioni p ON so.postazione_id = p.id
         WHERE d.data BETWEEN $1 AND $2
           AND v.stato = 'attivo'
+          AND v.ruolo != 'super_admin'
           AND d.stato = 'disponibile'
           AND p.stato = 'attiva'
           AND so.stato = 'attivo'

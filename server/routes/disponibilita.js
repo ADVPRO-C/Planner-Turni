@@ -131,10 +131,25 @@ router.post("/volontario", async (req, res) => {
       return res.status(403).json({ message: 'Non puoi modificare le disponibilità di altri volontari' });
     }
 
-    const congregazioneId = await ensureEntityAccess(req, 'volontari', volontario_id);
-    if (congregazioneId === null) {
+    // Verifica che il volontario non sia un super_admin e che sia attivo
+    const volontarioRow = await db.oneOrNone(
+      `SELECT id, ruolo, congregazione_id, stato FROM volontari WHERE id = $1`,
+      [volontario_id]
+    );
+    
+    if (!volontarioRow) {
       return res.status(404).json({ message: 'Volontario non trovato' });
     }
+
+    if (volontarioRow.ruolo === 'super_admin') {
+      return res.status(403).json({ message: 'I super admin non possono impostare disponibilità' });
+    }
+
+    if (volontarioRow.stato === 'non_attivo') {
+      return res.status(403).json({ message: 'I volontari inattivi non possono impostare disponibilità' });
+    }
+
+    const congregazioneId = volontarioRow.congregazione_id;
 
     const slotIds = [...new Set(disponibilita.map((d) => d.slot_orario_id))];
 
@@ -246,6 +261,7 @@ router.get("/postazione/:id", async (req, res) => {
       JOIN volontari v ON d.volontario_id = v.id
       JOIN slot_orari so ON d.slot_orario_id = so.id
       WHERE v.stato = 'attivo'
+        AND v.ruolo != 'super_admin'
         AND d.stato = 'disponibile'
         AND d.congregazione_id = $1
         AND so.postazione_id = $2
@@ -346,6 +362,7 @@ router.get("/riepilogo", async (req, res) => {
         AND d.data = a.data_turno
       WHERE d.stato = 'disponibile'
         AND v.stato = 'attivo'
+        AND v.ruolo != 'super_admin'
         AND p.stato = 'attiva'
     `;
     const params = [];
@@ -468,6 +485,7 @@ router.get("/contatori-mensili", async (req, res) => {
           AND d.data <= $2::date
           AND d.stato = 'disponibile'
         WHERE v.stato = 'attivo'
+          AND v.ruolo != 'super_admin'
         ${condizioniVolontari.length ? `AND ${condizioniVolontari.join(" AND ")}` : ""}
         GROUP BY v.id, v.nome, v.cognome
       ),
@@ -482,6 +500,7 @@ router.get("/contatori-mensili", async (req, res) => {
           AND a.data_turno <= $2::date
           AND a.stato IN ('attivo', 'assegnato')
         WHERE v.stato = 'attivo'
+          AND v.ruolo != 'super_admin'
         ${condizioniAssegnazioni.length ? `AND ${condizioniAssegnazioni.join(" AND ")}` : ""}
         GROUP BY v.id
       )

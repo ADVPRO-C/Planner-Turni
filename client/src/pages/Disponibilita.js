@@ -497,6 +497,25 @@ const Disponibilita = () => {
     }
   };
 
+  // Blocca l'accesso se l'utente è inattivo (solo admin e super_admin possono vedere la pagina)
+  // Questo controllo deve essere DOPO tutti gli hook
+  if (user?.stato === 'non_attivo' && user?.ruolo === 'volontario') {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <ExclamationTriangleIcon className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-red-800 mb-2">
+            Accesso bloccato
+          </h2>
+          <p className="text-red-600">
+            La sezione Disponibilità non è disponibile per volontari inattivi.
+            Contatta un amministratore per riattivare il tuo account.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="p-6">

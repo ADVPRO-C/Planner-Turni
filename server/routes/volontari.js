@@ -122,6 +122,18 @@ router.get("/", async (req, res) => {
       params.push(`%${searchTerm}%`, `%${searchTerm}%`);
     }
 
+    // Escludi i super_admin dalla lista dei volontari SOLO se l'utente corrente NON è un super_admin
+    // I super_admin possono vedere altri super_admin, ma gli altri utenti no
+    if (req.user?.ruolo !== "super_admin") {
+      conditions.push(`v.ruolo != 'super_admin'`);
+    }
+
+    // I volontari inattivi sono visibili solo ad admin e super_admin
+    // I volontari normali vedono solo quelli attivi
+    if (req.user?.ruolo === "volontario") {
+      conditions.push(`v.stato = 'attivo'`);
+    }
+
     if (conditions.length > 0) {
       query += " WHERE " + conditions.join(" AND ");
     }
@@ -136,12 +148,57 @@ router.get("/", async (req, res) => {
 
     const volontari = await db.any(query, params);
 
-    let countQuery = "SELECT COUNT(*) FROM volontari v";
-    if (conditions.length > 0) {
-      countQuery += " WHERE " + conditions.join(" AND ");
+    // Query per il conteggio totale (usa le stesse condizioni ma senza GROUP BY, LIMIT, OFFSET)
+    // Ricrea le condizioni per il conteggio (senza i parametri LIMIT/OFFSET)
+    const countConditions = [];
+    const countParams = [];
+    let countParamIndex = 1;
+
+    if (targetCongregazioneId) {
+      countConditions.push(`v.congregazione_id = $${countParamIndex++}`);
+      countParams.push(targetCongregazioneId);
     }
 
-    const totalCount = await db.one(countQuery, filterParams);
+    if (stato) {
+      countConditions.push(`v.stato = $${countParamIndex++}`);
+      countParams.push(stato);
+    }
+
+    if (sesso) {
+      countConditions.push(`v.sesso = $${countParamIndex++}`);
+      countParams.push(sesso);
+    }
+
+    if (searchTerm) {
+      countConditions.push(
+        `(v.nome ILIKE $${countParamIndex++} OR v.cognome ILIKE $${countParamIndex++})`
+      );
+      countParams.push(`%${searchTerm}%`, `%${searchTerm}%`);
+    }
+
+    // Escludi i super_admin anche dal conteggio (stessa logica della query principale)
+    if (req.user?.ruolo !== "super_admin") {
+      countConditions.push(`v.ruolo != 'super_admin'`);
+    }
+
+    // I volontari inattivi sono visibili solo ad admin e super_admin (stessa logica della query principale)
+    if (req.user?.ruolo === "volontario") {
+      countConditions.push(`v.stato = 'attivo'`);
+    }
+
+    let countQuery = `
+      SELECT COUNT(DISTINCT v.id) AS count
+      FROM volontari v
+      JOIN congregazioni c ON v.congregazione_id = c.id
+      LEFT JOIN assegnazioni_volontari av ON v.id = av.volontario_id
+      LEFT JOIN assegnazioni a ON av.assegnazione_id = a.id AND a.stato = 'completato'
+    `;
+    
+    if (countConditions.length > 0) {
+      countQuery += " WHERE " + countConditions.join(" AND ");
+    }
+
+    const totalCount = await db.one(countQuery, countParams);
 
     const totalItems = parseInt(totalCount.count, 10);
 

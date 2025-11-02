@@ -6,7 +6,6 @@ import {
   MapPinIcon,
   UsersIcon,
   ClockIcon,
-  BellIcon,
   CogIcon,
   ChartBarIcon,
   UserCircleIcon,
@@ -16,6 +15,7 @@ import {
   CalendarDaysIcon,
   BookOpenIcon,
   CheckCircleIcon,
+  FolderIcon,
 } from "@heroicons/react/24/outline";
 import { clsx } from "clsx";
 
@@ -136,11 +136,16 @@ const Sidebar = () => {
       adminOnly: false,
     },
     {
-      key: "notifiche",
-      label: "Notifiche",
-      icon: BellIcon,
-      path: "/notifiche",
-      adminOnly: true,
+      key: "documenti",
+      label: "Documenti",
+      icon: FolderIcon,
+      path: "/documenti",
+      adminOnly: false,
+      subItems: [
+        { label: "Autorizzazioni", path: "/documenti/autorizzazioni", adminOnly: false },
+        { label: "Istruzioni", path: "/documenti/istruzioni", adminOnly: false },
+        { label: "Contatto Responsabile", path: "/documenti/contatto-responsabile", adminOnly: false },
+      ],
     },
     {
       key: "impostazioni",
@@ -150,6 +155,7 @@ const Sidebar = () => {
       adminOnly: false,
       subItems: [
         { label: "Configurazione", path: "/impostazioni", adminOnly: true },
+        { label: "Notifiche", path: "/notifiche", adminOnly: false },
         { label: "Assistenza", path: "/assistenza", adminOnly: false },
       ],
     },
