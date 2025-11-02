@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../utils/api";
-import toast from "react-hot-toast";
+import { toastSuccess, toastError, toastLoading, toast } from "../utils/toast";
 import {
   DocumentCheckIcon,
   DocumentArrowUpIcon,
@@ -29,7 +29,7 @@ const Autorizzazioni = () => {
       setDocumenti(response.data.documenti || []);
     } catch (error) {
       console.error("Errore nel caricamento dei documenti:", error);
-      toast.error("Errore nel caricamento dei documenti");
+      toastError("Errore nel caricamento dei documenti");
     } finally {
       setLoading(false);
     }
@@ -44,12 +44,12 @@ const Autorizzazioni = () => {
     const file = e.target.files[0];
     if (file) {
       if (file.type !== "application/pdf") {
-        toast.error("Solo file PDF sono consentiti");
+        toastError("Solo file PDF sono consentiti");
         e.target.value = "";
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        toast.error("Il file non può superare 10MB");
+        toastError("Il file non può superare 10MB");
         e.target.value = "";
         return;
       }
@@ -60,7 +60,7 @@ const Autorizzazioni = () => {
   // Gestisce il caricamento del documento
   const handleUpload = async () => {
     if (!selectedFile) {
-      toast.error("Seleziona un file PDF");
+      toastError("Seleziona un file PDF");
       return;
     }
 
@@ -78,7 +78,7 @@ const Autorizzazioni = () => {
         },
       });
 
-      toast.success("Documento caricato con successo");
+      toastSuccess("Documento caricato con successo");
       setShowUploadModal(false);
       setSelectedFile(null);
       setDescrizione("");
@@ -88,7 +88,7 @@ const Autorizzazioni = () => {
       loadDocumenti();
     } catch (error) {
       console.error("Errore nel caricamento:", error);
-      toast.error(
+      toastError(
         error.response?.data?.message || "Errore nel caricamento del documento"
       );
     } finally {
@@ -108,11 +108,11 @@ const Autorizzazioni = () => {
 
     try {
       await api.delete(`/documenti/${documentoId}`);
-      toast.success("Documento eliminato con successo");
+      toastSuccess("Documento eliminato con successo");
       loadDocumenti();
     } catch (error) {
       console.error("Errore nell'eliminazione:", error);
-      toast.error(
+      toastError(
         error.response?.data?.message || "Errore nell'eliminazione del documento"
       );
     }
@@ -122,7 +122,7 @@ const Autorizzazioni = () => {
   const handleDownload = async (documentoId) => {
     try {
       // Mostra un messaggio di caricamento
-      const loadingToast = toast.loading("Caricamento documento...");
+      const loadingToast = toastLoading("Caricamento documento...");
       
       // Usa l'API helper che gestisce automaticamente l'autenticazione
       const response = await api.get(`/documenti/${documentoId}/download`, {
@@ -138,10 +138,10 @@ const Autorizzazioni = () => {
       setTimeout(() => window.URL.revokeObjectURL(url), 100);
       
       toast.dismiss(loadingToast);
-      toast.success("Documento aperto");
+      toastSuccess("Documento aperto");
     } catch (error) {
       console.error("Errore nell'apertura del documento:", error);
-      toast.error(
+      toastError(
         error.response?.data?.message || "Errore nell'apertura del documento"
       );
     }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import toast from "react-hot-toast";
+import { toastSuccess, toastError, toastInfo } from "../utils/toast";
 import { api } from "../utils/api";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
@@ -136,7 +136,7 @@ const Autocompilazione = () => {
     } catch (error) {
       console.error("Errore:", error);
       if (error.response?.status !== 401) {
-        toast.error("Errore di connessione");
+        toastError("Errore di connessione");
       }
     } finally {
       setLoading(false);
@@ -583,7 +583,7 @@ const Autocompilazione = () => {
     console.log("✅ Volontario disponibile:", isAvailable);
 
     if (!isAvailable) {
-      toast.error("Il volontario non è disponibile per questo turno");
+      toastError("Il volontario non è disponibile per questo turno");
       return;
     }
 
@@ -598,7 +598,7 @@ const Autocompilazione = () => {
     );
 
     if (isAlreadyAssigned) {
-      toast.error("Il volontario è già assegnato a questo turno nel database");
+      toastError("Il volontario è già assegnato a questo turno nel database");
       return;
     }
 
@@ -610,7 +610,7 @@ const Autocompilazione = () => {
     );
 
     if (isAlreadyPending) {
-      toast.error("Il volontario è già nelle assegnazioni in sospeso");
+      toastError("Il volontario è già nelle assegnazioni in sospeso");
       return;
     }
 
@@ -673,7 +673,7 @@ const Autocompilazione = () => {
       selectElement.value = "";
     }
 
-    toast.success("Volontario aggiunto (modifiche in sospeso)");
+    toastSuccess("Volontario aggiunto (modifiche in sospeso)");
   };
 
   // Rimuove un singolo volontario da un'assegnazione (salva localmente)
@@ -702,7 +702,7 @@ const Autocompilazione = () => {
       }
 
       setPendingAssignments(newPendingAssignments);
-      toast.success("Volontario rimosso (modifiche in sospeso)");
+      toastSuccess("Volontario rimosso (modifiche in sospeso)");
     } else {
       // Se è un'assegnazione esistente, aggiungila alle rimozioni in sospeso
       const newPendingRemovals = new Map(pendingRemovals);
@@ -743,7 +743,7 @@ const Autocompilazione = () => {
         "✅ Aggiunta rimozione in sospeso per assegnazione:",
         assegnazioneId
       );
-      toast.success("Volontario rimosso (modifiche in sospeso)");
+      toastSuccess("Volontario rimosso (modifiche in sospeso)");
     }
   };
 
@@ -910,7 +910,7 @@ const Autocompilazione = () => {
         selectedMonth.month
       ); // Salva nel localStorage
 
-      toast.success("Modifiche salvate con successo");
+      toastSuccess("Modifiche salvate con successo");
     } catch (error) {
       console.error("Errore nel salvataggio:", {
         error: error.message,
@@ -922,7 +922,7 @@ const Autocompilazione = () => {
         error.response?.data?.message ||
         error.message ||
         "Errore nel salvataggio delle modifiche";
-      toast.error(errorMessage);
+      toastError(errorMessage);
     }
   };
 
@@ -1267,7 +1267,7 @@ const Autocompilazione = () => {
             selectedMonth.month
           )}: ${totalNewAssignments} nuove assegnazioni aggiunte`;
 
-      toast.success(successMessage);
+      toastSuccess(successMessage);
 
       if (errors.length > 0) {
         console.warn(
@@ -1275,7 +1275,7 @@ const Autocompilazione = () => {
           errors
         );
 
-        toast.error(
+        toastError(
           `Autocompilazione completata con ${errors.length} avvisi.\n` +
             `Ci sono ancora ${errors.length} turni per cui non è disponibile un uomo.\n` +
             `Suggerimenti: apri "Turni Incompleti" per vedere i dettagli, ` +
@@ -1285,12 +1285,12 @@ const Autocompilazione = () => {
       }
 
       if (totalNewAssignments > 0) {
-        toast("Clicca 'Salva Modifiche' per confermare le assegnazioni", {
+        toastInfo("Clicca 'Salva Modifiche' per confermare le assegnazioni", {
           icon: "💾",
           duration: 4000,
         });
       } else {
-        toast(
+        toastInfo(
           "Nessuna nuova assegnazione necessaria. Tutti gli slot vuoti/incompleti sono stati completati.",
           {
             icon: "✅",
@@ -1300,7 +1300,7 @@ const Autocompilazione = () => {
       }
     } catch (error) {
       console.error("❌ Errore nell'autocompilazione:", error);
-      toast.error(`Errore nell'autocompilazione: ${error.message}`);
+      toastError(`Errore nell'autocompilazione: ${error.message}`);
     } finally {
       setCompiling(false);
     }
@@ -1342,7 +1342,7 @@ const Autocompilazione = () => {
             selectedMonth.month
           )}: ${resultData.assegnazioni_eliminate || 0} assegnazioni eliminate`;
 
-      toast.success(successMessage);
+      toastSuccess(successMessage);
       await loadGestioneData(); // Ricarica i dati
       // Pulisci anche le assegnazioni in sospeso e gli slot lasciati vuoti dopo il reset
       setPendingAssignments(new Map());
@@ -1356,7 +1356,7 @@ const Autocompilazione = () => {
       ); // Salva nel localStorage
     } catch (error) {
       console.error("Errore:", error);
-      toast.error(
+      toastError(
         error.response?.data?.message ||
           error.message ||
           "Errore di connessione"
@@ -1571,10 +1571,10 @@ const Autocompilazione = () => {
           ).padStart(2, "0")}.pdf`;
 
       doc.save(filename);
-      toast.success(`PDF esportato: ${filename}`);
+      toastSuccess(`PDF esportato: ${filename}`);
     } catch (error) {
       console.error("Errore export PDF:", error);
-      toast.error("Errore durante l'export PDF");
+      toastError("Errore durante l'export PDF");
     } finally {
       setExporting(false);
     }
@@ -1704,10 +1704,10 @@ const Autocompilazione = () => {
       link.click();
       document.body.removeChild(link);
 
-      toast.success(`Excel esportato: ${filename}`);
+      toastSuccess(`Excel esportato: ${filename}`);
     } catch (error) {
       console.error("Errore export Excel:", error);
-      toast.error("Errore durante l'export Excel");
+      toastError("Errore durante l'export Excel");
     } finally {
       setExporting(false);
     }
@@ -1968,7 +1968,7 @@ const Autocompilazione = () => {
                       newPendingAssignments.delete(key);
                     }
                     setPendingAssignments(newPendingAssignments);
-                    toast.success(
+                    toastSuccess(
                       "Volontario rimosso dalle assegnazioni in sospeso"
                     );
                   }}
@@ -2117,7 +2117,7 @@ const Autocompilazione = () => {
                       newPendingAssignments.delete(key);
                     }
                     setPendingAssignments(newPendingAssignments);
-                    toast.success(
+                    toastSuccess(
                       "Volontario rimosso dalle assegnazioni in sospeso"
                     );
                   }}

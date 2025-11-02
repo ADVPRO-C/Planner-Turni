@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import toast from "react-hot-toast";
+import { toastSuccess, toastError } from "../utils/toast";
 import { api } from "../utils/api";
 import {
   CalendarIcon,
@@ -104,7 +104,7 @@ const Disponibilita = () => {
       } catch (error) {
         console.error("Errore nel caricamento dei dati:", error);
         if (error.response?.status !== 401) {
-          toast.error("Errore nel caricamento dei dati");
+          toastError("Errore nel caricamento dei dati");
         }
       } finally {
         setLoading(false);
@@ -314,7 +314,7 @@ const Disponibilita = () => {
         disponibilita: disponibilitaArray,
       });
 
-      toast.success("Disponibilità salvate con successo!");
+      toastSuccess("Disponibilità salvate con successo!");
       
       // Fai un merge intelligente: mantieni le disponibilità locali e aggiorna con quelle del backend
       // Questo previene la perdita temporanea dei dati durante il refresh
@@ -392,7 +392,7 @@ const Disponibilita = () => {
       });
       if (error.response?.status !== 401) {
         const errorMessage = error.response?.data?.message || "Errore nel salvataggio delle disponibilità";
-        toast.error(errorMessage);
+        toastError(errorMessage);
       }
     } finally {
       setSaving(false);

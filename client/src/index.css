@@ -36,6 +36,48 @@ code {
   background: #94a3b8;
 }
 
+/* Stili personalizzati per i toast */
+.custom-toast {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Stile per il pulsante di chiusura X nei toast */
+[data-hot-toast] button[aria-label*="close"],
+[data-hot-toast] button[aria-label*="Close"],
+[data-hot-toast] .react-hot-toast-close {
+  color: rgba(255, 255, 255, 0.9) !important;
+  opacity: 1 !important;
+  transition: opacity 0.2s ease;
+  cursor: pointer !important;
+  margin-left: 12px !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 4px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 20px !important;
+  height: 20px !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+}
+
+[data-hot-toast] button[aria-label*="close"]:hover,
+[data-hot-toast] button[aria-label*="Close"]:hover,
+[data-hot-toast] .react-hot-toast-close:hover {
+  opacity: 1 !important;
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 4px !important;
+}
+
+/* Assicura che il container del toast abbia display flex per mostrare la X */
+[data-hot-toast] {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
 /* Animazioni personalizzate */
 @keyframes fadeIn {
   from {

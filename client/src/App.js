@@ -6,7 +6,7 @@ import {
   Navigate,
   useLocation,
 } from "react-router-dom";
-import { Toaster } from "react-hot-toast";
+import { Toaster, ToastBar, toast } from "react-hot-toast";
 import Sidebar from "./components/Sidebar";
 import Footer from "./components/Footer";
 import Login from "./pages/Login";
@@ -93,15 +93,56 @@ function App() {
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <div className="App">
           <Toaster
-            position="top-right"
+            position="bottom-right"
             toastOptions={{
               duration: 4000,
               style: {
                 background: "#363636",
                 color: "#fff",
+                borderRadius: "8px",
+                padding: "12px 16px",
+              },
+              dismissible: true,
+              className: "custom-toast",
+              ariaProps: {
+                role: "status",
+                "aria-live": "polite",
               },
             }}
-          />
+            containerStyle={{
+              maxWidth: "550px",
+              minWidth: "350px",
+              bottom: "24px",
+              right: "24px",
+              top: "auto",
+              left: "auto",
+            }}
+            reverseOrder={false}
+            gutter={12}
+          >
+            {(t) => (
+              <ToastBar
+                toast={t}
+                style={{
+                  width: "100%",
+                }}
+              >
+                {({ icon, message }) => (
+                  <div className="flex w-full items-start space-x-3">
+                    {icon && <div className="mt-0.5">{icon}</div>}
+                    <div className="flex-1 text-sm leading-relaxed">{message}</div>
+                    <button
+                      onClick={() => toast.dismiss(t.id)}
+                      className="ml-2 text-white/70 hover:text-white focus:outline-none"
+                      aria-label="close"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </ToastBar>
+            )}
+          </Toaster>
 
           <Routes>
             <Route path="/login" element={<Login />} />

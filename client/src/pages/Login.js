@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
-import toast from "react-hot-toast";
+import { toastSuccess, toastError } from "../utils/toast";
 
 const Login = () => {
   const [congregazioneCode, setCongregazioneCode] = useState("001");
@@ -27,13 +27,13 @@ const Login = () => {
     const normalizedCode = congregazioneCode?.trim().padStart(3, "0");
 
     if (!congregazioneCode?.trim()) {
-      toast.error("Inserisci l'ID congregazione (es. 001)");
+      toastError("Inserisci l'ID congregazione (es. 001)");
       setLoading(false);
       return;
     }
 
     if (!identificatore?.trim()) {
-      toast.error("Inserisci email o numero di telefono");
+      toastError("Inserisci email o numero di telefono");
       setLoading(false);
       return;
     }
@@ -42,7 +42,7 @@ const Login = () => {
     if (result.success) {
       // Toast di benvenuto dopo login riuscito
       setTimeout(() => {
-        toast.success(`Benvenuto, ${result.user?.nome || "Utente"}!`, {
+        toastSuccess(`Benvenuto, ${result.user?.nome || "Utente"}!`, {
           duration: 3000,
           icon: "👋",
         });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../utils/api";
-import toast from "react-hot-toast";
+import { toastSuccess, toastError } from "../utils/toast";
 import {
   PlusIcon,
   PencilIcon,
@@ -52,7 +52,7 @@ const GestioneVolontari = () => {
 
   const requireCongregazioneSelezionata = useCallback(() => {
     if (user?.ruolo === "super_admin" && !activeCongregazione?.id) {
-      toast.error(
+      toastError(
         "Seleziona una congregazione attiva dalla pagina Congregazioni per continuare."
       );
       return false;
@@ -79,7 +79,7 @@ const GestioneVolontari = () => {
       }
     } catch (error) {
       console.error("Errore nel caricamento dei volontari:", error);
-      toast.error("Errore nel caricamento dei volontari");
+      toastError("Errore nel caricamento dei volontari");
     } finally {
       setLoading(false);
     }
@@ -213,11 +213,11 @@ const GestioneVolontari = () => {
     // Validazione password per nuovi volontari
     if (!editingVolontario) {
       if (formData.password.length < 6) {
-        toast.error("La password deve essere di almeno 6 caratteri");
+        toastError("La password deve essere di almeno 6 caratteri");
         return;
       }
       if (formData.password !== formData.confermaPassword) {
-        toast.error("Le password non coincidono");
+        toastError("Le password non coincidono");
         return;
       }
     }
@@ -228,7 +228,7 @@ const GestioneVolontari = () => {
       formData.password &&
       formData.password.length < 6
     ) {
-      toast.error("La nuova password deve essere di almeno 6 caratteri");
+      toastError("La nuova password deve essere di almeno 6 caratteri");
       return;
     }
 
@@ -244,14 +244,14 @@ const GestioneVolontari = () => {
           updateData.congregazione_id = activeCongregazione.id;
         }
         await api.put(`/volontari/${editingVolontario.id}`, updateData);
-        toast.success("Volontario aggiornato con successo");
+        toastSuccess("Volontario aggiornato con successo");
       } else {
         // Crea nuovo volontario
         const createData = { ...formData };
         delete createData.confermaPassword; // Rimuovi confermaPassword
         if (user?.ruolo === "super_admin") {
           if (!activeCongregazione?.id) {
-            toast.error(
+            toastError(
               "Seleziona una congregazione attiva prima di creare un volontario."
             );
             return;
@@ -259,7 +259,7 @@ const GestioneVolontari = () => {
           createData.congregazione_id = activeCongregazione.id;
         }
         await api.post("/volontari", createData);
-        toast.success("Volontario creato con successo");
+        toastSuccess("Volontario creato con successo");
       }
 
       setShowModal(false);
@@ -268,7 +268,7 @@ const GestioneVolontari = () => {
       fetchVolontari();
     } catch (error) {
       console.error("Errore nel salvataggio:", error);
-      toast.error(error.response?.data?.message || "Errore nel salvataggio");
+      toastError(error.response?.data?.message || "Errore nel salvataggio");
     }
   };
 
@@ -294,7 +294,7 @@ const GestioneVolontari = () => {
       volontarioToDelete?.ruolo === "admin" &&
       volontarioToDelete?.id === user?.id
     ) {
-      toast.error("Non puoi eliminare il tuo account admin");
+      toastError("Non puoi eliminare il tuo account admin");
       return;
     }
 
@@ -312,7 +312,7 @@ const GestioneVolontari = () => {
 
     try {
       await api.delete(`/volontari/${volontarioId}`);
-      toast.success("Volontario eliminato con successo");
+      toastSuccess("Volontario eliminato con successo");
 
       // Aggiorna la lista solo se necessario
       setTimeout(() => {
@@ -320,7 +320,7 @@ const GestioneVolontari = () => {
       }, 1000);
     } catch (error) {
       console.error("Errore nell'eliminazione:", error);
-      toast.error("Errore nell'eliminazione del volontario");
+      toastError("Errore nell'eliminazione del volontario");
 
       // Ripristina la lista in caso di errore
       fetchVolontari();
@@ -363,17 +363,17 @@ const GestioneVolontari = () => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       
-      toast.success(`Volontari esportati in formato ${format.toUpperCase()}`);
+      toastSuccess(`Volontari esportati in formato ${format.toUpperCase()}`);
     } catch (error) {
       console.error('Errore nell\'esportazione:', error);
-      toast.error('Errore nell\'esportazione dei volontari');
+      toastError('Errore nell\'esportazione dei volontari');
     }
   };
 
   // Funzione per gestire l'importazione
   const handleImport = async () => {
     if (!importFile) {
-      toast.error('Seleziona un file da importare');
+      toastError('Seleziona un file da importare');
       return;
     }
 
@@ -395,12 +395,12 @@ const GestioneVolontari = () => {
         }
       });
 
-      toast.success(response.data.message);
+      toastSuccess(response.data.message);
       
       // Mostra dettagli dell'importazione se ci sono errori
       if (response.data.results && response.data.results.errors.length > 0) {
         console.log('Errori di importazione:', response.data.results.errors);
-        toast.error(`${response.data.results.errors.length} errori durante l'importazione. Controlla la console per i dettagli.`);
+        toastError(`${response.data.results.errors.length} errori durante l'importazione. Controlla la console per i dettagli.`);
       }
 
       setShowImportModal(false);
@@ -408,7 +408,7 @@ const GestioneVolontari = () => {
       fetchVolontari(); // Ricarica la lista
     } catch (error) {
       console.error('Errore nell\'importazione:', error);
-      toast.error(error.response?.data?.message || 'Errore nell\'importazione dei volontari');
+      toastError(error.response?.data?.message || 'Errore nell\'importazione dei volontari');
     } finally {
       setImporting(false);
     }
@@ -427,7 +427,7 @@ const GestioneVolontari = () => {
       if (isValidType) {
         setImportFile(file);
       } else {
-        toast.error('Formato file non supportato. Utilizzare JSON o CSV.');
+        toastError('Formato file non supportato. Utilizzare JSON o CSV.');
         event.target.value = '';
       }
     }

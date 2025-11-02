@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import toast from "react-hot-toast";
+import { toastError, toastInfo } from "../utils/toast";
 import { api } from "../utils/api";
 import {
   ClockIcon,
@@ -66,7 +66,7 @@ const TurniIncompleti = () => {
     } catch (error) {
       console.error("Errore:", error);
       if (error.response?.status !== 401) {
-        toast.error("Errore di connessione");
+        toastError("Errore di connessione");
       }
     } finally {
       setLoading(false);
@@ -236,7 +236,7 @@ const TurniIncompleti = () => {
 
   // Placeholder per la funzione di richiesta disponibilità via email
   const handleRichiediDisponibilita = (date, slot, postazione) => {
-    toast.info(
+    toastInfo(
       "Funzionalità di richiesta disponibilità via email in fase di sviluppo"
     );
     console.log("Richiesta disponibilità per:", {
