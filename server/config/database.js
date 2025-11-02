@@ -1,17 +1,26 @@
 const pgp = require("pg-promise")();
 
 // Configurazione del database
-const config = {
-  host: process.env.DB_HOST || "localhost",
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || "planner_db",
-  user: process.env.DB_USER || "zy0n",
-  password: process.env.DB_PASSWORD || "",
-  ssl:
-    process.env.NODE_ENV === "production"
-      ? { rejectUnauthorized: false }
-      : false,
-};
+// Supporta sia DATABASE_URL (connection string) che variabili separate
+let config;
+
+if (process.env.DATABASE_URL) {
+  // Usa la connection string (es. Supabase, Railway, Heroku)
+  config = process.env.DATABASE_URL;
+} else {
+  // Usa variabili separate
+  config = {
+    host: process.env.DB_HOST || "localhost",
+    port: process.env.DB_PORT || 5432,
+    database: process.env.DB_NAME || "planner_db",
+    user: process.env.DB_USER || "zy0n",
+    password: process.env.DB_PASSWORD || "",
+    ssl:
+      process.env.NODE_ENV === "production" || process.env.DB_SSL === "true"
+        ? { rejectUnauthorized: false }
+        : false,
+  };
+}
 
 const db = pgp(config);
 

@@ -124,6 +124,7 @@ const Assistenza = () => {
       }
 
       // 4. Controllo nome file (no caratteri speciali pericolosi)
+      // eslint-disable-next-line no-control-regex
       if (/[<>:"/\\|?*\x00-\x1f]/.test(fileName)) {
         toast.error(`❌ Nome file ${file.name} contiene caratteri non validi`, {
           duration: 5000,

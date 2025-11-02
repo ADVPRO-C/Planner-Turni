@@ -1,0 +1,39 @@
+═══════════════════════════════════════════════════════════════
+  VARIABILI D'AMBIENTE DA COPIARE - RAILWAY
+═══════════════════════════════════════════════════════════════
+
+📍 COPIA E INCOLLA QUESTE NELLE VARIABILI DI RAILWAY:
+
+───────────────────────────────────────────────────────────────
+1. DATABASE_URL
+───────────────────────────────────────────────────────────────
+postgresql://postgres:2vQ-i60MqwHG@db.wwcgryzbgvxfviwcjnkg.supabase.co:5432/postgres
+
+───────────────────────────────────────────────────────────────
+2. JWT_SECRET
+───────────────────────────────────────────────────────────────
+planner-turni-jwt-secret-2024-super-sicuro-minimo-32-caratteri-lungo
+
+───────────────────────────────────────────────────────────────
+3. NODE_ENV
+───────────────────────────────────────────────────────────────
+production
+
+═══════════════════════════════════════════════════════════════
+  VARIABILE DA COPIARE - VERCEL
+═══════════════════════════════════════════════════════════════
+
+📍 COPIA QUESTA NELLA VARIABILE DI VERCEL:
+
+───────────────────────────────────────────────────────────────
+Name: REACT_APP_API_URL
+───────────────────────────────────────────────────────────────
+Value: https://TUO-BACKEND-URL.up.railway.app/api
+
+⚠️ IMPORTANTE:
+- Sostituisci "TUO-BACKEND-URL" con l'URL reale di Railway
+- Aggiungi "/api" alla fine (come mostrato sopra)
+- Esempio: https://planner-backend-production.up.railway.app/api
+
+═══════════════════════════════════════════════════════════════
+

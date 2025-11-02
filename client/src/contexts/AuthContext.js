@@ -95,7 +95,7 @@ export const AuthProvider = ({ children }) => {
     } else {
       setLoading(false);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const syncActiveCongregazioneWithUser = useCallback(
     (userData, preserveExisting = false) => {

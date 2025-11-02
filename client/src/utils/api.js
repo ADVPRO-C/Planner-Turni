@@ -1,7 +1,18 @@
 import axios from "axios";
 
 // Configurazione axios globale
+// IMPORTANTE: In produzione, REACT_APP_API_URL DEVE essere configurato su Vercel
+// Deve puntare all'URL pubblico del backend Railway (es: https://tuo-backend.up.railway.app/api)
+// Su mobile, senza questa variabile, l'app proverà a usare localhost che non funziona!
 const apiBaseURL = process.env.REACT_APP_API_URL || "http://localhost:5001/api";
+
+// Debug: log dell'URL API utilizzato
+console.log('🔗 API Base URL configurato:', apiBaseURL);
+console.log('🔍 REACT_APP_API_URL env:', process.env.REACT_APP_API_URL || 'NON CONFIGURATO');
+if (!process.env.REACT_APP_API_URL && process.env.NODE_ENV === 'production') {
+  console.warn('⚠️ ATTENZIONE: REACT_APP_API_URL non è configurato in produzione! L\'app potrebbe non funzionare su mobile.');
+}
+
 axios.defaults.baseURL = apiBaseURL;
 
 // Funzione helper per aggiungere il token alle richieste

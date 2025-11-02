@@ -302,7 +302,7 @@ const TurniIncompleti = () => {
 
   useEffect(() => {
     loadGestioneData();
-  }, [selectedDateRange]);
+  }, [selectedDateRange]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (

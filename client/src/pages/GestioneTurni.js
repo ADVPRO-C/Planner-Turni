@@ -191,7 +191,9 @@ const Autocompilazione = () => {
       selectedMonth.month
     );
     setManuallyEmptiedSlots(slotsForMonth);
-  }, [selectedDateRange]); // Ricarica i dati quando cambia il range di date
+    // Ricarica i dati quando cambia il range di date
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDateRange]);
 
   // Funzioni di utilità
   const getDayName = (dateString) => {

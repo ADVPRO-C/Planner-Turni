@@ -65,7 +65,7 @@ const GestionePostazioni = () => {
     };
 
     loadPostazioni();
-  }, [activeCongregazione]);
+  }, [activeCongregazione]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Popola il form quando si seleziona una postazione per la modifica
   useEffect(() => {

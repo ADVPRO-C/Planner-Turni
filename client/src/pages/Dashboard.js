@@ -146,7 +146,7 @@ const Dashboard = () => {
     };
 
     fetchStats();
-  }, [user?.id, activeCongregazione?.id]);
+  }, [user?.id, activeCongregazione?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const StatCard = ({ title, value, icon: Icon, color = "blue" }) => (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">

@@ -17,10 +17,20 @@ const documentiRoutes = require("./routes/documenti");
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const HOST = process.env.HOST || "127.0.0.1";
+// Su Railway/Heroku/Production, ascolta su 0.0.0.0 per accettare connessioni esterne
+// Railway imposta PORT automaticamente, quindi se PORT è settato da Railway, usiamo 0.0.0.0
+const isProduction = process.env.NODE_ENV === "production" || process.env.RAILWAY_ENVIRONMENT || process.env.PORT;
+const HOST = process.env.HOST || (isProduction ? "0.0.0.0" : "127.0.0.1");
 
 // Middleware di sicurezza
-app.use(helmet());
+// In produzione, disabilita alcune restrizioni di Helmet per permettere richieste da mobile
+const helmetConfig = process.env.NODE_ENV === 'production' 
+  ? {
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: false,
+    }
+  : {};
+app.use(helmet(helmetConfig));
 
 // Rate limiting - DISABILITATO
 // const limiter = rateLimit({
@@ -29,8 +39,34 @@ app.use(helmet());
 // });
 // app.use(limiter);
 
-// Middleware
-app.use(cors());
+// Middleware CORS - Configurazione per permettere richieste da frontend deployato e mobile
+const corsOptions = {
+  origin: function (origin, callback) {
+    // In produzione, accetta tutte le origini (per mobile e vari domini)
+    // In sviluppo, accetta localhost
+    if (process.env.NODE_ENV === 'production') {
+      callback(null, true);
+    } else {
+      // In sviluppo, permetti localhost e domini comuni
+      const allowedOrigins = [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
+      ];
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Congregazione-Id'],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
