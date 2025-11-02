@@ -1,0 +1,24 @@
+═══════════════════════════════════════════════════════════════
+  CONFIGURAZIONE DATABASE_URL SU RAILWAY
+═══════════════════════════════════════════════════════════════
+
+📍 Vai su Railway → Il tuo servizio → Variables
+
+───────────────────────────────────────────────────────────────
+Aggiungi questa variabile se non esiste:
+───────────────────────────────────────────────────────────────
+
+Name:  DATABASE_URL
+
+Value: postgresql://postgres:2vQ-i60MqwHG@db.wwcgryzbgvxfviwcjnkg.supabase.co:5432/postgres
+
+Environment: ✅ Production
+             ✅ Preview
+             ✅ Development
+
+───────────────────────────────────────────────────────────────
+Dopo aver salvato, fai REDEPLOY!
+───────────────────────────────────────────────────────────────
+
+═══════════════════════════════════════════════════════════════
+
