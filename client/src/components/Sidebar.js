@@ -310,13 +310,6 @@ const Sidebar = () => {
         {menuItems.map(renderMenuItem)}
       </nav>
 
-      {/* Copyright */}
-      <div className="px-4 py-3 border-t border-gray-200">
-        <p className="text-xs text-gray-500 text-center">
-          © 2025 | Developed by D.Arena
-        </p>
-      </div>
-
       {/* User Profile Section */}
       <div className="border-t border-gray-200 px-4 py-4">
         <div className="flex items-center">

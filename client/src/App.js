@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import Sidebar from "./components/Sidebar";
+import Footer from "./components/Footer";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import ElencoPostazioni from "./pages/ElencoPostazioni";
@@ -53,16 +54,19 @@ const ProtectedLayout = ({ children }) => {
   return (
     <div className="flex h-screen bg-gray-100">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
-        {user?.ruolo === "super_admin" &&
-          !activeCongregazione?.id &&
-          location.pathname !== "/congregazioni" && (
-            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3">
-              Seleziona una congregazione attiva dalla sezione <strong>Congregazioni</strong> per operare sui dati.
-            </div>
-          )}
-        {children}
-      </main>
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <main className="flex-1 overflow-auto">
+          {user?.ruolo === "super_admin" &&
+            !activeCongregazione?.id &&
+            location.pathname !== "/congregazioni" && (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3">
+                Seleziona una congregazione attiva dalla sezione <strong>Congregazioni</strong> per operare sui dati.
+              </div>
+            )}
+          {children}
+        </main>
+        <Footer />
+      </div>
     </div>
   );
 };
