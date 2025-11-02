@@ -9,11 +9,12 @@ router.post("/supabase-to-railway", async (req, res) => {
   try {
     // Prendi connection string Supabase (deve essere configurata come variabile)
     const SUPABASE_URL = process.env.SUPABASE_DATABASE_URL;
-    
+
     if (!SUPABASE_URL) {
       return res.status(400).json({
         error: "SUPABASE_DATABASE_URL non configurata",
-        message: "Aggiungi la variabile SUPABASE_DATABASE_URL su Railway con la connection string di Supabase",
+        message:
+          "Aggiungi la variabile SUPABASE_DATABASE_URL su Railway con la connection string di Supabase",
       });
     }
 
@@ -31,7 +32,7 @@ router.post("/supabase-to-railway", async (req, res) => {
 
     // Configurazione con SSL per Supabase + forzatura IPv4
     const dns = require("dns");
-    
+
     // Forza IPv4 per Railway (non supporta IPv6 esterni)
     const supabaseConfig = {
       connectionString: SUPABASE_URL,
@@ -51,7 +52,9 @@ router.post("/supabase-to-railway", async (req, res) => {
                 { family: 6, hints: dns.ADDRCONFIG },
                 (err6, address6, family6) => {
                   if (!err6) {
-                    console.warn(`⚠️ Usando IPv6 per ${hostname} (IPv4 non disponibile)`);
+                    console.warn(
+                      `⚠️ Usando IPv6 per ${hostname} (IPv4 non disponibile)`
+                    );
                     callback(null, address6, family6);
                   } else {
                     callback(err4, null, null);
@@ -117,13 +120,16 @@ router.post("/supabase-to-railway", async (req, res) => {
         }
 
         // Verifica esistenza tabella
-        const tableExists = await targetDb.oneOrNone(`
+        const tableExists = await targetDb.oneOrNone(
+          `
           SELECT EXISTS (
             SELECT FROM information_schema.tables 
             WHERE table_schema = 'public' 
             AND table_name = $1
           );
-        `, [tableName]);
+        `,
+          [tableName]
+        );
 
         if (!tableExists.exists) {
           return { success: false, rows: 0, error: "Table does not exist" };
@@ -243,4 +249,3 @@ router.post("/supabase-to-railway", async (req, res) => {
 });
 
 module.exports = router;
-

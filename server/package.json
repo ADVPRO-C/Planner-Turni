@@ -8,9 +8,12 @@
     "dev": "nodemon index.js",
     "test": "jest",
     "migrate:supabase-to-railway": "node scripts/migrate-supabase-to-railway.js",
+    "migrate:via-rest-api": "node scripts/migrate-via-rest-api.js",
+    "migrate:localhost-to-railway": "node scripts/migrate-localhost-to-railway.js",
     "init:railway-db": "node scripts/init-railway-db.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.78.0",
     "axios": "^1.11.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

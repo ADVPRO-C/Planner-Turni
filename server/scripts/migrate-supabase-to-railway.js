@@ -19,14 +19,100 @@ if (!RAILWAY_URL) {
 }
 
 // Configurazione pg-promise con SSL per Supabase
-const supabaseConfig = {
-  connectionString: SUPABASE_URL,
-  ssl: { rejectUnauthorized: false },
-};
+const dns = require("dns");
+const { promisify } = require("util");
+const dnsLookup = promisify(dns.lookup);
 
-// Connessioni ai database
-const supabaseDb = pgp(supabaseConfig);
-const railwayDb = pgp(RAILWAY_URL);
+// IP IPv6 di Supabase (risolto manualmente con comando 'host')
+// Se il DNS di Node.js non funziona, usiamo direttamente l'IP
+const SUPABASE_IPV6 = "2a05:d01c:30c:9d20:9e8b:bfe9:f009:3247";
+
+// Funzione per risolvere hostname
+async function resolveHostname(hostname) {
+  try {
+    // Prova prima IPv6
+    const addr6 = await dnsLookup(hostname, { family: 6 });
+    console.log(`✅ Risolto ${hostname} -> ${addr6} (IPv6)`);
+    return addr6;
+  } catch (err6) {
+    // Se Node.js DNS fallisce, usa l'IP che abbiamo trovato manualmente
+    if (hostname === "db.wwcgryzbgvxfviwcjnkg.supabase.co") {
+      console.log(`⚠️ DNS Node.js fallito, uso IP IPv6 noto: ${SUPABASE_IPV6}`);
+      return SUPABASE_IPV6;
+    }
+    try {
+      // Fallback IPv4
+      const addr4 = await dnsLookup(hostname, { family: 4 });
+      console.log(`✅ Risolto ${hostname} -> ${addr4} (IPv4)`);
+      return addr4;
+    } catch (err4) {
+      // Se anche IPv4 fallisce ma è Supabase, usa IP noto
+      if (hostname === "db.wwcgryzbgvxfviwcjnkg.supabase.co") {
+        console.log(`⚠️ DNS Node.js fallito, uso IP IPv6 noto: ${SUPABASE_IPV6}`);
+        return SUPABASE_IPV6;
+      }
+      console.error(`❌ Impossibile risolvere ${hostname}`);
+      throw err4;
+    }
+  }
+}
+
+// Estrai hostname dalla connection string
+const urlMatch = SUPABASE_URL.match(/@([^:]+):(\d+)/);
+const supabaseHostname = urlMatch ? urlMatch[1] : null;
+
+// Risolvi hostname e costruisci config
+async function getSupabaseConfig() {
+  let resolvedIP = SUPABASE_IPV6; // Usa IP noto di default
+  
+  if (supabaseHostname) {
+    try {
+      const resolved = await resolveHostname(supabaseHostname);
+      if (resolved) {
+        resolvedIP = resolved;
+      }
+    } catch (error) {
+      console.log(`⚠️ Usando IP IPv6 noto: ${SUPABASE_IPV6}`);
+    }
+  }
+
+  // Costruisci configurazione con IP diretto (non connection string)
+  // Parse della connection string originale per estrarre credenziali
+  const url = new URL(SUPABASE_URL.replace('postgresql://', 'http://'));
+  const port = url.port || '5432';
+  const database = url.pathname.slice(1) || 'postgres';
+  
+  console.log(`📡 Configurazione Supabase con IP IPv6: ${resolvedIP}:${port}/${database}`);
+
+  return {
+    host: resolvedIP,
+    port: parseInt(port, 10),
+    database: database,
+    user: url.username || 'postgres',
+    password: url.password || '',
+    ssl: { rejectUnauthorized: false },
+    // Lookup che ritorna direttamente l'IP senza fare DNS
+    lookup: (hostname, options, callback) => {
+      // Se è l'hostname di Supabase, ritorna direttamente l'IP
+      if (hostname === supabaseHostname || hostname.includes(supabaseHostname) || hostname.replace(/[\[\]]/g, '') === resolvedIP) {
+        callback(null, resolvedIP, 6);
+        return;
+      }
+      // Se è già un IP, ritornalo
+      const cleanHostname = hostname.replace(/[\[\]]/g, '');
+      if (cleanHostname === resolvedIP) {
+        callback(null, resolvedIP, 6);
+        return;
+      }
+      // Altrimenti lookup normale
+      dns.lookup(hostname, { family: 0 }, callback);
+    },
+  };
+}
+
+// Creiamo le connessioni dopo aver risolto l'IP
+const supabaseConfigPromise = getSupabaseConfig();
+let supabaseDb, railwayDb;
 
 // Ordine delle tabelle per rispettare le foreign keys
 // Le tabelle senza dipendenze vengono copiate per prime
@@ -161,6 +247,12 @@ async function migrateDatabase() {
   console.log("=" .repeat(60));
 
   try {
+    // Risolvi configurazione Supabase e crea connessioni
+    console.log("\n🔍 Risoluzione hostname Supabase...");
+    const supabaseConfig = await supabaseConfigPromise;
+    supabaseDb = pgp(supabaseConfig);
+    railwayDb = pgp(RAILWAY_URL);
+
     // Test connessioni
     console.log("\n🔌 Test connessioni...");
     await supabaseDb.connect();
