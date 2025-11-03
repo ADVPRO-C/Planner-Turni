@@ -169,7 +169,7 @@ const Login = () => {
 
           <div className="text-center">
             <p className="text-xs text-gray-500">
-              Credenziali di test: ID 001 · admin@planner.com · password123
+              Se riscontri difficoltà nell'accesso contatta il tuo sorvegliante del servizio per ottenere assistenza.
             </p>
           </div>
         </form>
