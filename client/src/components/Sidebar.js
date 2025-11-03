@@ -16,13 +16,33 @@ import {
   BookOpenIcon,
   CheckCircleIcon,
   FolderIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { clsx } from "clsx";
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout, activeCongregazione } = useAuth();
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState(new Set());
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Rileva se siamo su mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768); // md breakpoint di Tailwind
+    };
+    
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  // Chiudi sidebar su mobile quando cambia la route
+  useEffect(() => {
+    if (isMobile && isOpen && onClose) {
+      onClose();
+    }
+  }, [location.pathname, isMobile, isOpen, onClose]);
 
   const toggleExpanded = (itemKey) => {
     const newExpanded = new Set(expandedItems);
@@ -215,7 +235,7 @@ const Sidebar = () => {
                   e.preventDefault();
                   toggleExpanded(item.key);
                 }
-              : undefined
+              : handleLinkClick
           }
           className={clsx(
             "flex items-center px-4 py-3 text-sm font-medium rounded-md transition-colors duration-200",
@@ -255,6 +275,7 @@ const Sidebar = () => {
                 <Link
                   key={subItem.path}
                   to={subItem.path}
+                  onClick={handleLinkClick}
                   className={clsx(
                     "block px-4 py-2 text-sm rounded-md transition-colors duration-200",
                     isActive(subItem.path)
@@ -272,10 +293,44 @@ const Sidebar = () => {
     );
   };
 
+  // Gestisci click su link per chiudere sidebar su mobile
+  const handleLinkClick = () => {
+    if (isMobile && onClose) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="flex flex-col w-64 bg-white shadow-lg">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200">
+    <>
+      {/* Overlay su mobile quando sidebar è aperto */}
+      {isMobile && isOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      
+      <div
+        className={clsx(
+          "flex flex-col w-64 bg-white shadow-lg z-50",
+          "fixed md:static inset-y-0 left-0 transform transition-transform duration-300 ease-in-out",
+          isMobile && !isOpen && "-translate-x-full",
+          isMobile && isOpen && "translate-x-0"
+        )}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200 relative">
+          {/* Bottone chiudi su mobile */}
+          {isMobile && (
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              aria-label="Chiudi menu"
+            >
+              <XMarkIcon className="h-6 w-6" />
+            </button>
+          )}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center">
             <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
@@ -331,7 +386,12 @@ const Sidebar = () => {
             </p>
           </div>
           <button
-            onClick={logout}
+            onClick={() => {
+              logout();
+              if (isMobile && onClose) {
+                onClose();
+              }
+            }}
             className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors duration-200"
             title="Logout"
           >
@@ -339,7 +399,8 @@ const Sidebar = () => {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 

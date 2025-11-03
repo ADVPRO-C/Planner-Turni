@@ -36,6 +36,19 @@ import "./index.css";
 const ProtectedLayout = ({ children }) => {
   const location = useLocation();
   const { isAuthenticated, loading, user, activeCongregazione } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  // Rileva se siamo su mobile
+  React.useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   // Mostra loading screen mentre verifica il token
   if (loading) {
@@ -56,8 +69,32 @@ const ProtectedLayout = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      <Sidebar />
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="flex flex-col flex-1 overflow-hidden md:ml-0">
+        {/* Header mobile con bottone menu */}
+        {isMobile && (
+          <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between z-30">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 text-gray-600 hover:text-gray-900"
+              aria-label="Apri menu"
+            >
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path d="M4 6h16M4 12h16M4 18h16"></path>
+              </svg>
+            </button>
+            <h1 className="text-lg font-semibold text-gray-900">Planner Turni</h1>
+            <div className="w-10"></div> {/* Spacer per centrare il titolo */}
+          </div>
+        )}
         <main className="flex-1 overflow-auto">
           {user?.ruolo === "super_admin" &&
             !activeCongregazione?.id &&
