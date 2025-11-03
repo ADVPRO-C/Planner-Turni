@@ -24,25 +24,35 @@ const Sidebar = ({ isOpen, onClose }) => {
   const { user, logout, activeCongregazione } = useAuth();
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState(new Set());
-  const [isMobile, setIsMobile] = useState(false);
+  // Inizializza isMobile controllando immediatamente la dimensione dello schermo
+  // Questo evita il glitch durante il rendering iniziale
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth < 768; // md breakpoint di Tailwind
+    }
+    return false;
+  });
 
-  // Rileva se siamo su mobile
+  // Rileva se siamo su mobile e aggiorna lo stato
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768); // md breakpoint di Tailwind
     };
     
-    checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
   // Chiudi sidebar su mobile quando cambia la route
   useEffect(() => {
-    if (isMobile && isOpen) {
-      onClose?.();
+    if (isMobile && isOpen && onClose) {
+      onClose();
     }
   }, [location.pathname, isMobile, isOpen, onClose]);
+
+  // Valore di default per isOpen se non passato come prop
+  // Su desktop: sempre visibile (true), su mobile: usa il prop isOpen
+  const sidebarIsOpen = isOpen !== undefined ? isOpen : !isMobile;
 
   const toggleExpanded = (itemKey) => {
     const newExpanded = new Set(expandedItems);
@@ -295,7 +305,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   // Gestisci click su link per chiudere sidebar su mobile
   const handleLinkClick = () => {
-    if (isMobile && onClose) {
+    if (isMobile && sidebarIsOpen && onClose) {
       onClose();
     }
   };
@@ -303,9 +313,9 @@ const Sidebar = ({ isOpen, onClose }) => {
   return (
     <>
       {/* Overlay su mobile quando sidebar è aperto */}
-      {isMobile && isOpen && (
+      {isMobile && sidebarIsOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
           onClick={onClose}
           aria-hidden="true"
         />
@@ -313,10 +323,14 @@ const Sidebar = ({ isOpen, onClose }) => {
       
       <div
         className={clsx(
-          "flex flex-col w-64 bg-white shadow-lg z-50",
-          "fixed md:static inset-y-0 left-0 transform transition-transform duration-300 ease-in-out",
-          isMobile && !isOpen && "-translate-x-full",
-          isMobile && isOpen && "translate-x-0"
+          "flex flex-col w-64 bg-white shadow-lg",
+          "fixed md:static inset-y-0 left-0 z-50",
+          "transform transition-transform duration-300 ease-in-out",
+          // Su mobile: nascosto se chiuso, visibile se aperto
+          isMobile && !sidebarIsOpen && "-translate-x-full",
+          isMobile && sidebarIsOpen && "translate-x-0",
+          // Su desktop: sempre visibile
+          "md:translate-x-0"
         )}
       >
         {/* Header */}
@@ -325,80 +339,80 @@ const Sidebar = ({ isOpen, onClose }) => {
           {isMobile && (
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 transition-colors z-10"
               aria-label="Chiudi menu"
             >
               <XMarkIcon className="h-6 w-6" />
             </button>
           )}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">P</span>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center">
+              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">P</span>
+              </div>
+              <h1 className="ml-3 text-lg font-semibold text-gray-900">
+                Planner Turni
+              </h1>
             </div>
-            <h1 className="ml-3 text-lg font-semibold text-gray-900">
-              Planner Turni
-            </h1>
           </div>
-        </div>
-        
-        {/* Badge Congregazione Attiva */}
-        {isSuperAdmin ? (
-          activeCongregazione?.id ? (
+          
+          {/* Badge Congregazione Attiva */}
+          {isSuperAdmin ? (
+            activeCongregazione?.id ? (
+              <div className="px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg">
+                <p className="text-xs font-medium text-primary-700 truncate">
+                  {activeCongregazione.nome} | {activeCongregazione.codice}
+                </p>
+              </div>
+            ) : (
+              <div className="px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-xs font-medium text-yellow-700">
+                  Nessuna congregazione selezionata
+                </p>
+              </div>
+            )
+          ) : user?.congregazione_codice ? (
             <div className="px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg">
               <p className="text-xs font-medium text-primary-700 truncate">
-                {activeCongregazione.nome} | {activeCongregazione.codice}
+                {user?.congregazione_nome} | {user?.congregazione_codice}
               </p>
             </div>
-          ) : (
-            <div className="px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-xs font-medium text-yellow-700">
-                Nessuna congregazione selezionata
-              </p>
-            </div>
-          )
-        ) : user?.congregazione_codice ? (
-          <div className="px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg">
-            <p className="text-xs font-medium text-primary-700 truncate">
-              {user?.congregazione_nome} | {user?.congregazione_codice}
-            </p>
-          </div>
-        ) : null}
-      </div>
-
-      {/* Menu Items */}
-      <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-        {menuItems.map(renderMenuItem)}
-      </nav>
-
-      {/* User Profile Section */}
-      <div className="border-t border-gray-200 px-4 py-4">
-        <div className="flex items-center">
-          <div className="flex-shrink-0">
-            <UserCircleIcon className="h-8 w-8 text-gray-400" />
-          </div>
-          <div className="ml-3 flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate">
-              {user?.nome} {user?.cognome}
-            </p>
-            <p className="text-xs text-gray-500 truncate capitalize">
-              {user?.ruolo || "volontario"}
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              logout();
-              if (isMobile && onClose) {
-                onClose();
-              }
-            }}
-            className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors duration-200"
-            title="Logout"
-          >
-            <ArrowLeftOnRectangleIcon className="h-5 w-5" />
-          </button>
+          ) : null}
         </div>
-      </div>
+
+        {/* Menu Items */}
+        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+          {menuItems.map(renderMenuItem)}
+        </nav>
+
+        {/* User Profile Section */}
+        <div className="border-t border-gray-200 px-4 py-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <UserCircleIcon className="h-8 w-8 text-gray-400" />
+            </div>
+            <div className="ml-3 flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {user?.nome} {user?.cognome}
+              </p>
+              <p className="text-xs text-gray-500 truncate capitalize">
+                {user?.ruolo || "volontario"}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                logout();
+                if (isMobile && onClose) {
+                  onClose();
+                }
+              }}
+              className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors duration-200"
+              title="Logout"
+            >
+              <ArrowLeftOnRectangleIcon className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
       </div>
     </>
   );
