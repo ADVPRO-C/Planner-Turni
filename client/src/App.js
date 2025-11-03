@@ -37,17 +37,22 @@ const ProtectedLayout = ({ children }) => {
   const location = useLocation();
   const { isAuthenticated, loading, user, activeCongregazione } = useAuth();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
-  const [isMobile, setIsMobile] = React.useState(false);
+  // Inizializza isMobile controllando immediatamente la dimensione dello schermo
+  const [isMobile, setIsMobile] = React.useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth < 768; // md breakpoint di Tailwind
+    }
+    return false;
+  });
   const handleSidebarClose = React.useCallback(() => setSidebarOpen(false), []);
   const handleSidebarOpen = React.useCallback(() => setSidebarOpen(true), []);
 
-  // Rileva se siamo su mobile
+  // Rileva se siamo su mobile e aggiorna lo stato
   React.useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
     
-    checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);

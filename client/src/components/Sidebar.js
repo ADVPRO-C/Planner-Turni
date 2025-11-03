@@ -329,9 +329,13 @@ const Sidebar = ({ isOpen, onClose }) => {
           // Su mobile: nascosto se chiuso, visibile se aperto
           isMobile && !sidebarIsOpen && "-translate-x-full",
           isMobile && sidebarIsOpen && "translate-x-0",
-          // Su desktop: sempre visibile
-          "md:translate-x-0"
+          // Su desktop: sempre visibile (rimuove translate)
+          "md:translate-x-0 md:transform-none"
         )}
+        style={{
+          // Assicura che su mobile la sidebar parta nascosta
+          ...(isMobile && !sidebarIsOpen ? { transform: 'translateX(-100%)' } : {}),
+        }}
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 relative">
