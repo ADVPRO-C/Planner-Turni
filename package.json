@@ -13,6 +13,7 @@
     "install-all": "npm install && cd server && npm install && cd ../client && npm install",
     "init-db": "./scripts/init-db.sh",
     "migrate": "node server/scripts/run-migration-congregazione-id.js",
+    "cleanup:disponibilita": "node server/scripts/cleanup-disponibilita.js --before-current-month",
     "setup": "npm run install-all && npm run init-db"
   },
   "keywords": [

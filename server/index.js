@@ -21,6 +21,7 @@ const assistenzaRoutes = require("./routes/assistenza");
 const congregazioniRoutes = require("./routes/congregazioni");
 const esperienzeRoutes = require("./routes/esperienze");
 const documentiRoutes = require("./routes/documenti");
+const adminRoutes = require("./routes/admin");
 const migrateRoutes = require("./routes/migrate"); // ⚠️ TEMPORANEO - rimuovere dopo migrazione
 
 const app = express();
@@ -100,6 +101,8 @@ app.use("/api/esperienze", esperienzeRoutes);
 console.log("✓ Route esperienze caricate");
 app.use("/api/documenti", documentiRoutes);
 console.log("✓ Route documenti caricate");
+app.use("/api/admin", adminRoutes);
+console.log("✓ Route admin caricate");
 app.use("/api/migrate", migrateRoutes); // ⚠️ TEMPORANEO - rimuovere dopo migrazione
 console.log("✓ Route migrazione caricate (TEMPORANEA)");
 
