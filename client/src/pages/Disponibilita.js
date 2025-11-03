@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { toastSuccess, toastError } from "../utils/toast";
 import { api } from "../utils/api";
@@ -31,6 +31,8 @@ const Disponibilita = () => {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [expandedPostazioni, setExpandedPostazioni] = useState(new Set()); // Set di ID postazioni espanse
   const [allExpanded, setAllExpanded] = useState(false); // Flag per espansione globale
+  const [dirtyDisponibilita, setDirtyDisponibilita] = useState({});
+  const initialDisponibilitaRef = useRef({});
 
   // Calcola il mese corrente
   useEffect(() => {
@@ -63,21 +65,11 @@ const Disponibilita = () => {
         const disponibilitaData = disponibilitaResponse.data;
         const disponibilitaMap = {};
         
-        console.log("📥 Disponibilità caricate dal backend (INIZIALE):", JSON.stringify(disponibilitaData, null, 2));
-        console.log("📥 Primo record esempio:", disponibilitaData[0]);
-        
-        if (disponibilitaData.length === 0) {
-          console.warn("⚠️ Nessuna disponibilità trovata nel backend per questo mese!");
-        }
-        
-        disponibilitaData.forEach((disp, index) => {
-          console.log(`\n📋 Processando disponibilità ${index + 1}/${disponibilitaData.length}:`, disp);
-          
+        disponibilitaData.forEach((disp) => {
           // Normalizza il formato della data
           const dataNormalizzata = normalizeDate(disp.data);
           
           if (!dataNormalizzata) {
-            console.error(`❌ Data non valida per disponibilità ${index + 1}:`, disp);
             return;
           }
           
@@ -87,20 +79,16 @@ const Disponibilita = () => {
             : parseInt(disp.slot_orario_id, 10);
           
           if (isNaN(slotId)) {
-            console.error(`❌ Slot ID non valido per disponibilità ${index + 1}:`, disp);
             return;
           }
           
           const key = `${dataNormalizzata}_${slotId}`;
           disponibilitaMap[key] = disp.stato === "disponibile";
-          
-          console.log(`✅ Chiave creata: "${key}" (data: "${dataNormalizzata}", slot: ${slotId}, stato: "${disp.stato}")`);
         });
         
-        console.log("\n🗺️ Mappa disponibilità finale:", disponibilitaMap);
-        console.log("🗺️ Chiavi nella mappa:", Object.keys(disponibilitaMap));
-        console.log("🗺️ Numero totale di disponibilità mappate:", Object.keys(disponibilitaMap).length);
         setDisponibilita(disponibilitaMap);
+        initialDisponibilitaRef.current = { ...disponibilitaMap };
+        setDirtyDisponibilita({});
       } catch (error) {
         console.error("Errore nel caricamento dei dati:", error);
         if (error.response?.status !== 401) {
@@ -179,11 +167,8 @@ const Disponibilita = () => {
     }
     
     // Log del tipo e valore ricevuto per debug
-    console.log(`🔍 normalizeDate input:`, { type: typeof dateValue, value: dateValue, isDate: dateValue instanceof Date });
-    
     // Se è già una stringa YYYY-MM-DD, restituiscila così
     if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
-      console.log(`✅ Data già in formato YYYY-MM-DD: ${dateValue}`);
       return dateValue;
     }
     
@@ -192,7 +177,6 @@ const Disponibilita = () => {
       const parsed = new Date(dateValue);
       if (!isNaN(parsed.getTime())) {
         const result = formatDateLocal(parsed);
-        console.log(`✅ Estratto da ISO string: ${dateValue} -> ${result}`);
         return result;
       }
       const extracted = dateValue.split('T')[0];
@@ -247,153 +231,73 @@ const Disponibilita = () => {
     const slotId = typeof slotOrarioId === 'number' ? slotOrarioId : parseInt(slotOrarioId, 10);
     const key = `${dataNormalizzata}_${slotId}`;
     
-    console.log(`✏️ Modifica disponibilità: ${key} = ${disponibile}`);
-    
-    setDisponibilita((prev) => ({
-      ...prev,
-      [key]: disponibile,
-    }));
+    setDisponibilita((prev) => {
+      const next = { ...prev };
+      if (disponibile) {
+        next[key] = true;
+      } else {
+        delete next[key];
+      }
+      return next;
+    });
+
+    const initialValue = initialDisponibilitaRef.current[key] === true;
+    setDirtyDisponibilita((prev) => {
+      const next = { ...prev };
+      if (disponibile === initialValue) {
+        delete next[key];
+      } else {
+        next[key] = {
+          data: dataNormalizzata,
+          slot_orario_id: slotId,
+          disponibile,
+        };
+      }
+      return next;
+    });
   };
 
   // Salva le disponibilità
   const handleSaveDisponibilita = async () => {
+    const changes = Object.values(dirtyDisponibilita);
+    if (changes.length === 0) {
+      toastSuccess("Nessuna modifica da salvare.");
+      return;
+    }
+
     setSaving(true);
     try {
-      // Genera tutte le date del mese corrente
-      const monthDates = generateMonthDates(currentMonth, currentYear);
-      const dataInizio = `${currentYear}-${String(currentMonth).padStart(2, "0")}-01`;
-      const lastDay = new Date(currentYear, currentMonth, 0).getDate();
-      const dataFine = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-
-      // Raccogli tutte le disponibilità (incluse quelle deselezionate) per il mese corrente
-      const disponibilitaArray = [];
-      
-      // Per ogni data del mese e ogni postazione/slot, crea un record
-      monthDates.forEach((date) => {
-        const dayNumber = getDayNumber(date);
-        const postazioniForDay = getPostazioniForDay(dayNumber);
-        const dateStr = formatDateLocal(date); // YYYY-MM-DD
-
-        postazioniForDay.forEach((postazione) => {
-          postazione.slot_orari?.forEach((slot) => {
-            // Normalizza la data e lo slot ID per creare una chiave coerente
-            const dataNormalizzata = normalizeDate(dateStr) || dateStr;
-            const slotId = typeof slot.id === 'number' ? slot.id : parseInt(slot.id, 10);
-            const key = `${dataNormalizzata}_${slotId}`;
-            const isChecked = disponibilita[key] === true;
-            
-            console.log(`💾 Preparazione salvataggio: ${key} = ${isChecked}`);
-            
-            // Includi solo le disponibilità selezionate (disponibile)
-            // Le altre verranno implicitamente rimosse dal backend che cancella per data
-            if (isChecked) {
-              disponibilitaArray.push({
-                data: dataNormalizzata, // Usa la data normalizzata
-                slot_orario_id: slotId,
-                stato: "disponibile",
-                note: null,
-              });
-            }
-          });
-        });
-      });
-
-      // Se non ci sono disponibilità selezionate, informa l'utente ma procedi comunque
-      if (disponibilitaArray.length === 0) {
-        const confirm = window.confirm(
-          "Non hai selezionato nessuna disponibilità. Vuoi salvare comunque? (Questo rimuoverà tutte le disponibilità per questo mese)"
-        );
-        if (!confirm) {
-          setSaving(false);
-          return;
-        }
-      }
-
       await api.post("/disponibilita/volontario", {
         volontario_id: user.id,
-        disponibilita: disponibilitaArray,
+        disponibilita: changes.map((change) => ({
+          data: change.data,
+          slot_orario_id: change.slot_orario_id,
+          stato: change.disponibile ? "disponibile" : "non_disponibile",
+          note: null,
+        })),
       });
 
-      toastSuccess("Disponibilità salvate con successo!");
-      
-      // Fai un merge intelligente: mantieni le disponibilità locali e aggiorna con quelle del backend
-      // Questo previene la perdita temporanea dei dati durante il refresh
-      const currentDisponibilitaMap = { ...disponibilita };
-      
-      // Ricarica i dati dal backend per sincronizzare
-      const disponibilitaResponse = await api.get(
-        `/disponibilita/volontario/${user.id}?data_inizio=${dataInizio}&data_fine=${dataFine}`
-      );
-      const disponibilitaData = disponibilitaResponse.data;
-      
-      console.log("📥 Disponibilità ricaricate dopo salvataggio:", disponibilitaData);
-      console.log("📋 Disponibilità locali attuali:", currentDisponibilitaMap);
-      
-      // Crea la nuova mappa partendo dalle disponibilità del backend
-      const backendDisponibilitaMap = {};
-      
-      disponibilitaData.forEach((disp) => {
-        // Normalizza il formato della data
-        const dataNormalizzata = normalizeDate(disp.data);
-        
-        if (!dataNormalizzata) {
-          console.warn("⚠️ Data non valida per disponibilità dopo salvataggio:", disp);
-          return;
-        }
-        
-        // Assicurati che slot_orario_id sia un numero
-        const slotId = typeof disp.slot_orario_id === 'number' 
-          ? disp.slot_orario_id 
-          : parseInt(disp.slot_orario_id, 10);
-        
-        if (isNaN(slotId)) {
-          console.warn("⚠️ Slot ID non valido per disponibilità dopo salvataggio:", disp);
-          return;
-        }
-        
-        const key = `${dataNormalizzata}_${slotId}`;
-        backendDisponibilitaMap[key] = disp.stato === "disponibile";
-        
-        console.log(`🔑 Chiave creata dopo salvataggio: ${key} (data: ${dataNormalizzata}, slot: ${slotId}, stato: ${disp.stato})`);
-      });
-      
-      // Merge: le disponibilità del backend hanno priorità, ma manteniamo quelle locali
-      // per il mese corrente che potrebbero essere state appena modificate
-      const mergedDisponibilitaMap = { ...currentDisponibilitaMap, ...backendDisponibilitaMap };
-      
-      // Rimuovi le chiavi che non corrispondono più a slot validi (pulizia)
-      // Mantieni solo le disponibilità che corrispondono al mese corrente
-      const cleanedDisponibilitaMap = {};
-      monthDates.forEach((date) => {
-        const dayNumber = getDayNumber(date);
-        const postazioniForDay = getPostazioniForDay(dayNumber);
-        const dateStr = formatDateLocal(date);
-        const dataNormalizzata = normalizeDate(dateStr) || dateStr;
-
-        postazioniForDay.forEach((postazione) => {
-          postazione.slot_orari?.forEach((slot) => {
-            const slotId = typeof slot.id === 'number' ? slot.id : parseInt(slot.id, 10);
-            const key = `${dataNormalizzata}_${slotId}`;
-            if (mergedDisponibilitaMap.hasOwnProperty(key)) {
-              cleanedDisponibilitaMap[key] = mergedDisponibilitaMap[key];
-            }
-          });
+      setDisponibilita((prev) => {
+        const updated = { ...prev };
+        Object.entries(dirtyDisponibilita).forEach(([key, change]) => {
+          if (change.disponibile) {
+            updated[key] = true;
+            initialDisponibilitaRef.current[key] = true;
+          } else {
+            delete updated[key];
+            delete initialDisponibilitaRef.current[key];
+          }
         });
+        return updated;
       });
-      
-      console.log("🗺️ Mappa disponibilità finale dopo salvataggio (merged):", cleanedDisponibilitaMap);
-      setDisponibilita(cleanedDisponibilitaMap);
+
+      setDirtyDisponibilita({});
+      toastSuccess("Disponibilità salvate con successo!");
     } catch (error) {
-      console.error("Errore nel salvataggio:", error);
-      console.error("Dettagli errore:", {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
-      if (error.response?.status !== 401) {
-        const errorMessage = error.response?.data?.message || "Errore nel salvataggio delle disponibilità";
-        toastError(errorMessage);
-      }
+      console.error("Errore nel salvataggio delle disponibilità:", error);
+      toastError(
+        error.response?.data?.message || "Errore nel salvataggio delle disponibilità"
+      );
     } finally {
       setSaving(false);
     }
@@ -795,7 +699,7 @@ const Disponibilita = () => {
       <div className="flex justify-center mt-6">
         <button
           onClick={handleSaveDisponibilita}
-          disabled={saving}
+          disabled={saving || Object.keys(dirtyDisponibilita).length === 0}
           className="btn-primary flex items-center px-8 py-3 text-lg"
         >
           {saving ? (

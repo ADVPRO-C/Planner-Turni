@@ -152,6 +152,8 @@ router.post("/volontario", async (req, res) => {
     const congregazioneId = volontarioRow.congregazione_id;
 
     const slotIds = [...new Set(disponibilita.map((d) => d.slot_orario_id))];
+    const toEnable = disponibilita.filter((d) => d.stato === "disponibile");
+    const toDisable = disponibilita.filter((d) => d.stato === "non_disponibile");
 
     if (slotIds.length === 0) {
       return res.status(400).json({ message: 'Nessuna disponibilità fornita' });
@@ -173,36 +175,75 @@ router.post("/volontario", async (req, res) => {
         .json({ message: 'Slot orario non appartiene alla congregazione del volontario' });
     }
 
-    await db.tx(async (t) => {
-      const dateToUpdate = [...new Set(disponibilita.map((d) => d.data))];
+    const pgpInstance = db.$config ? db.$config.pgp : null;
+    const pgpHelpers = pgpInstance ? pgpInstance.helpers : null;
 
-      if (dateToUpdate.length > 0) {
-        await t.none(
-          `DELETE FROM disponibilita
-           WHERE volontario_id = $1
-             AND congregazione_id = $2
-             AND data = ANY($3::date[])`,
-          [volontario_id, congregazioneId, dateToUpdate]
-        );
+    await db.tx(async (t) => {
+      if (toDisable.length > 0) {
+        for (const disp of toDisable) {
+          await t.none(
+            `DELETE FROM disponibilita
+             WHERE volontario_id = $1
+               AND congregazione_id = $2
+               AND data = $3
+               AND slot_orario_id = $4`,
+            [volontario_id, congregazioneId, disp.data, disp.slot_orario_id]
+          );
+        }
       }
 
-      for (const disp of disponibilita) {
-        await t.none(
-          `INSERT INTO disponibilita (volontario_id, congregazione_id, data, slot_orario_id, stato, note)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
+      if (toEnable.length > 0) {
+        if (!pgpInstance || !pgpHelpers) {
+          for (const disp of toEnable) {
+            await t.none(
+              `INSERT INTO disponibilita (volontario_id, congregazione_id, data, slot_orario_id, stato, note)
+               VALUES ($1, $2, $3, $4, 'disponibile', $5)
+               ON CONFLICT (volontario_id, data, slot_orario_id)
+               DO UPDATE SET stato = EXCLUDED.stato, note = EXCLUDED.note`,
+              [
+                volontario_id,
+                congregazioneId,
+                disp.data,
+                disp.slot_orario_id,
+                disp.note || null,
+              ]
+            );
+          }
+        } else {
+          const insertData = toEnable.map((disp) => ({
             volontario_id,
-            congregazioneId,
-            disp.data,
-            disp.slot_orario_id,
-            disp.stato,
-            disp.note || null,
-          ]
-        );
+            congregazione_id: congregazioneId,
+            data: disp.data,
+            slot_orario_id: disp.slot_orario_id,
+            stato: "disponibile",
+            note: disp.note || null,
+          }));
+
+          const columnSet = new pgpHelpers.ColumnSet(
+            [
+              "volontario_id",
+              "congregazione_id",
+              "data",
+              "slot_orario_id",
+              "stato",
+              "note",
+            ],
+            { table: "disponibilita" }
+          );
+
+          const insertQuery =
+            pgpHelpers.insert(insertData, columnSet) +
+            " ON CONFLICT (volontario_id, data, slot_orario_id) DO UPDATE SET stato = EXCLUDED.stato, note = EXCLUDED.note";
+          await t.none(insertQuery);
+        }
       }
     });
 
-    res.json({ message: 'Disponibilità salvate con successo' });
+    res.json({
+      message: 'Disponibilità salvate con successo',
+      inserite: toEnable.length,
+      rimosse: toDisable.length,
+    });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ message: error.message });
