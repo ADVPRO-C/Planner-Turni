@@ -38,6 +38,8 @@ const ProtectedLayout = ({ children }) => {
   const { isAuthenticated, loading, user, activeCongregazione } = useAuth();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
+  const handleSidebarClose = React.useCallback(() => setSidebarOpen(false), []);
+  const handleSidebarOpen = React.useCallback(() => setSidebarOpen(true), []);
 
   // Rileva se siamo su mobile
   React.useEffect(() => {
@@ -69,13 +71,13 @@ const ProtectedLayout = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar isOpen={sidebarOpen} onClose={handleSidebarClose} />
       <div className="flex flex-col flex-1 overflow-hidden md:ml-0">
         {/* Header mobile con bottone menu */}
         {isMobile && (
           <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between z-30">
             <button
-              onClick={() => setSidebarOpen(true)}
+              onClick={handleSidebarOpen}
               className="p-2 text-gray-600 hover:text-gray-900"
               aria-label="Apri menu"
             >

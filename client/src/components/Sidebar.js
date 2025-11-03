@@ -39,8 +39,8 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   // Chiudi sidebar su mobile quando cambia la route
   useEffect(() => {
-    if (isMobile && isOpen && onClose) {
-      onClose();
+    if (isMobile && isOpen) {
+      onClose?.();
     }
   }, [location.pathname, isMobile, isOpen, onClose]);
 

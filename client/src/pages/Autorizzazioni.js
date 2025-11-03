@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../utils/api";
 import { toastSuccess, toastError, toastLoading, toast } from "../utils/toast";
@@ -18,6 +18,7 @@ const Autorizzazioni = () => {
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [descrizione, setDescrizione] = useState("");
+  const fileInputRef = useRef(null);
 
   const isAdmin = user?.ruolo === "admin" || user?.ruolo === "super_admin";
 
@@ -42,19 +43,22 @@ const Autorizzazioni = () => {
   // Gestisce la selezione del file
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      if (file.type !== "application/pdf") {
-        toastError("Solo file PDF sono consentiti");
-        e.target.value = "";
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        toastError("Il file non può superare 10MB");
-        e.target.value = "";
-        return;
-      }
-      setSelectedFile(file);
+    if (!file) {
+      setSelectedFile(null);
+      return;
     }
+
+    if (file.type !== "application/pdf") {
+      toastError("Solo file PDF sono consentiti");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toastError("Il file non può superare 10MB");
+      e.target.value = "";
+      return;
+    }
+    setSelectedFile(file);
   };
 
   // Gestisce il caricamento del documento
@@ -72,19 +76,16 @@ const Autorizzazioni = () => {
         formData.append("descrizione", descrizione.trim());
       }
 
-      await api.post("/documenti", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      await api.post("/documenti", formData);
 
       toastSuccess("Documento caricato con successo");
       setShowUploadModal(false);
       setSelectedFile(null);
       setDescrizione("");
       // Reset input file
-      const fileInput = document.querySelector('input[type="file"]');
-      if (fileInput) fileInput.value = "";
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       loadDocumenti();
     } catch (error) {
       console.error("Errore nel caricamento:", error);
@@ -303,6 +304,9 @@ const Autorizzazioni = () => {
                     setShowUploadModal(false);
                     setSelectedFile(null);
                     setDescrizione("");
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = "";
+                    }
                   }}
                   className="text-gray-400 hover:text-gray-600"
                 >
@@ -319,6 +323,7 @@ const Autorizzazioni = () => {
                     type="file"
                     accept="application/pdf"
                     onChange={handleFileChange}
+                    ref={fileInputRef}
                     className="block w-full text-lg text-gray-500 file:mr-4 file:py-3 file:px-4 file:rounded-md file:border-0 file:text-lg file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
                   />
                   {selectedFile && (
@@ -348,6 +353,9 @@ const Autorizzazioni = () => {
                       setShowUploadModal(false);
                       setSelectedFile(null);
                       setDescrizione("");
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = "";
+                      }
                     }}
                     className="flex-1 btn-secondary text-lg py-3"
                     disabled={uploading}
