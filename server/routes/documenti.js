@@ -16,25 +16,30 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Configurazione multer per upload PDF
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../uploads/documenti");
+// Usa memoryStorage per Railway (filesystem temporaneo) o diskStorage per locale
+const isProduction = process.env.NODE_ENV === "production" || process.env.RAILWAY_ENVIRONMENT;
+const storage = isProduction
+  ? multer.memoryStorage() // Su Railway, salva in memoria e poi nel database
+  : multer.diskStorage({
+      // In locale, salva sul filesystem
+      destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, "../uploads/documenti");
 
-    // Crea la directory se non esiste
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
+        // Crea la directory se non esiste
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
 
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    // Genera nome file unico con timestamp e congregazione
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    const name = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9-_]/g, "_");
-    cb(null, `${name}-${uniqueSuffix}${ext}`);
-  },
-});
+        cb(null, uploadDir);
+      },
+      filename: (req, file, cb) => {
+        // Genera nome file unico con timestamp e congregazione
+        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        const ext = path.extname(file.originalname);
+        const name = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9-_]/g, "_");
+        cb(null, `${name}-${uniqueSuffix}${ext}`);
+      },
+    });
 
 const upload = multer({
   storage: storage,
@@ -118,7 +123,8 @@ router.get("/:id/download", async (req, res) => {
         d.nome_file,
         d.nome_originale,
         d.path_file,
-        d.congregazione_id
+        d.congregazione_id,
+        d.file_data
       FROM documenti_autorizzazioni d
       WHERE d.id = $1`,
       [documentoId]
@@ -133,22 +139,34 @@ router.get("/:id/download", async (req, res) => {
       enforceSameCongregazione(req, documento.congregazione_id);
     }
 
-    // Costruisci il path completo del file
-    const filePath = path.join(__dirname, "../uploads/documenti", documento.nome_file);
+    // In produzione, recupera dal database (BYTEA)
+    // In locale, recupera dal filesystem
+    if (isProduction && documento.file_data) {
+      // File salvato nel database
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${encodeURIComponent(documento.nome_originale)}"`
+      );
+      res.send(Buffer.from(documento.file_data, 'binary'));
+    } else {
+      // File salvato sul filesystem (locale)
+      const filePath = path.join(__dirname, "../uploads/documenti", documento.nome_file);
 
-    // Verifica che il file esista
-    if (!fs.existsSync(filePath)) {
-      console.error(`File non trovato: ${filePath}`);
-      return res.status(404).json({ message: "File non trovato sul server" });
+      // Verifica che il file esista
+      if (!fs.existsSync(filePath)) {
+        console.error(`File non trovato: ${filePath}`);
+        return res.status(404).json({ message: "File non trovato sul server" });
+      }
+
+      // Invia il file
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${encodeURIComponent(documento.nome_originale)}"`
+      );
+      res.sendFile(path.resolve(filePath));
     }
-
-    // Invia il file
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${encodeURIComponent(documento.nome_originale)}"`
-    );
-    res.sendFile(path.resolve(filePath));
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ message: error.message });
@@ -171,8 +189,8 @@ router.post(
 
       const { error, value } = documentoSchema.validate(req.body || {});
       if (error) {
-        // Elimina il file caricato se la validazione fallisce
-        if (req.file && req.file.path) {
+        // Elimina il file caricato se la validazione fallisce (solo in locale)
+        if (!isProduction && req.file && req.file.path && fs.existsSync(req.file.path)) {
           fs.unlinkSync(req.file.path);
         }
         return res.status(400).json({ message: error.details[0].message });
@@ -183,8 +201,8 @@ router.post(
       });
 
       if (!congregazioneId) {
-        // Elimina il file caricato
-        if (req.file && req.file.path) {
+        // Elimina il file caricato (solo in locale)
+        if (!isProduction && req.file && req.file.path && fs.existsSync(req.file.path)) {
           fs.unlinkSync(req.file.path);
         }
         return res.status(400).json({
@@ -194,21 +212,35 @@ router.post(
 
       const { descrizione } = value || {};
 
+      // Genera nome file unico
+      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      const ext = path.extname(req.file.originalname);
+      const name = path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9-_]/g, "_");
+      const filename = `${name}-${uniqueSuffix}${ext}`;
+      const filepath = isProduction 
+        ? `database/${filename}` // Path virtuale per produzione
+        : req.file.path; // Path reale per locale
+
+      // In produzione, salva il file nel database (BYTEA)
+      // In locale, salva sul filesystem
+      const fileData = isProduction ? req.file.buffer : null;
+
       // Inserisci il documento nel database
       const nuovoDocumento = await db.one(
         `INSERT INTO documenti_autorizzazioni 
-        (congregazione_id, nome_file, nome_originale, descrizione, path_file, dimensione_file, mime_type, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (congregazione_id, nome_file, nome_originale, descrizione, path_file, dimensione_file, mime_type, created_by, file_data)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id, nome_originale, descrizione, dimensione_file, created_at`,
         [
           congregazioneId,
-          req.file.filename,
+          filename,
           req.file.originalname,
           descrizione || null,
-          req.file.path,
+          filepath,
           req.file.size,
           req.file.mimetype,
           req.user.id,
+          fileData, // NULL in locale, buffer in produzione
         ]
       );
 
@@ -217,8 +249,8 @@ router.post(
         documento: nuovoDocumento,
       });
     } catch (error) {
-      // Elimina il file caricato in caso di errore
-      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      // Elimina il file caricato in caso di errore (solo in locale)
+      if (!isProduction && req.file && req.file.path && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
       console.error("Errore nel caricamento del documento:", error);
@@ -269,13 +301,15 @@ router.delete(
         enforceSameCongregazione(req, documento.congregazione_id);
       }
 
-      // Elimina il file dal filesystem
-      const filePath = path.join(__dirname, "../uploads/documenti", documento.nome_file);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      // Elimina il file dal filesystem (solo in locale, in produzione è nel database)
+      if (!isProduction) {
+        const filePath = path.join(__dirname, "../uploads/documenti", documento.nome_file);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
       }
 
-      // Elimina il record dal database
+      // Elimina il record dal database (in produzione elimina anche file_data BYTEA)
       await db.none("DELETE FROM documenti_autorizzazioni WHERE id = $1", [
         documentoId,
       ]);
