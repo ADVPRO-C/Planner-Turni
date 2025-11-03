@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import {
@@ -32,6 +32,10 @@ const Sidebar = ({ isOpen, onClose }) => {
     }
     return false;
   });
+  const previousPathRef = useRef(location.pathname);
+
+  // Determina lo stato di apertura della sidebar
+  const sidebarIsOpen = isOpen !== undefined ? isOpen : !isMobile;
 
   // Rileva se siamo su mobile e aggiorna lo stato
   useEffect(() => {
@@ -45,14 +49,12 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   // Chiudi sidebar su mobile quando cambia la route
   useEffect(() => {
-    if (isMobile && isOpen && onClose) {
+    const hasRouteChanged = previousPathRef.current !== location.pathname;
+    if (hasRouteChanged && isMobile && sidebarIsOpen && onClose) {
       onClose();
     }
-  }, [location.pathname, isMobile, isOpen, onClose]);
-
-  // Valore di default per isOpen se non passato come prop
-  // Su desktop: sempre visibile (true), su mobile: usa il prop isOpen
-  const sidebarIsOpen = isOpen !== undefined ? isOpen : !isMobile;
+    previousPathRef.current = location.pathname;
+  }, [location.pathname, isMobile, sidebarIsOpen, onClose]);
 
   const toggleExpanded = (itemKey) => {
     const newExpanded = new Set(expandedItems);
