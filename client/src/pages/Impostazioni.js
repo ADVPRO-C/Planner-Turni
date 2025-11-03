@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../utils/api";
-import toast from "react-hot-toast";
+import { toastSuccess, toastError } from "../utils/toast";
 import {
   CogIcon,
   UserCircleIcon,
   ShieldCheckIcon,
   BellIcon,
   XMarkIcon,
+  WrenchScrewdriverIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
 
 const Impostazioni = () => {
@@ -19,6 +21,62 @@ const Impostazioni = () => {
     confirmPassword: "",
   });
   const [loading, setLoading] = useState(false);
+  const [cleanupStats, setCleanupStats] = useState({
+    oldDisponibilitaCount: 0,
+    loading: false,
+  });
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+
+  // Carica statistiche cleanup per super admin
+  useEffect(() => {
+    if (user?.ruolo === "super_admin") {
+      fetchCleanupStats();
+    }
+  }, [user?.ruolo]);
+
+  const fetchCleanupStats = async () => {
+    setCleanupStats((prev) => ({ ...prev, loading: true }));
+    try {
+      const response = await api.get("/admin/cleanup-disponibilita/stats");
+      setCleanupStats({
+        oldDisponibilitaCount: response.data.oldDisponibilitaCount || 0,
+        loading: false,
+      });
+    } catch (error) {
+      console.error("Errore nel caricamento statistiche cleanup:", error);
+      setCleanupStats((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleCleanup = async () => {
+    if (
+      !window.confirm(
+        `Sei sicuro di voler eliminare ${cleanupStats.oldDisponibilitaCount} disponibilità vecchie? Questa operazione non può essere annullata.`
+      )
+    ) {
+      return;
+    }
+
+    setCleanupLoading(true);
+    try {
+      const response = await api.post(
+        "/admin/cleanup-disponibilita?beforeCurrentMonth=true"
+      );
+      toastSuccess(
+        response.data.message || `Cleanup completato: ${response.data.deletedCount} record eliminati.`
+      );
+      // Ricarica le statistiche
+      await fetchCleanupStats();
+    } catch (error) {
+      console.error("Errore durante il cleanup:", error);
+      toastError(
+        error.response?.data?.message ||
+          "Errore durante il cleanup delle disponibilità"
+      );
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -169,6 +227,55 @@ const Impostazioni = () => {
           </div>
         </div>
 
+        {/* Utility - Solo Super Admin */}
+        {user?.ruolo === "super_admin" && (
+          <div className="bg-white shadow-lg rounded-lg p-6">
+            <div className="flex items-center mb-4">
+              <WrenchScrewdriverIcon className="h-6 w-6 text-gray-600 mr-2" />
+              <h2 className="text-xl font-semibold text-gray-900">Utility</h2>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-sm font-medium text-gray-900">
+                      Cleanup Disponibilità
+                    </h3>
+                    {cleanupStats.loading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600"></div>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        {cleanupStats.oldDisponibilitaCount} disponibilità vecchie
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    Elimina le disponibilità di mesi precedenti per mantenere il database pulito
+                  </p>
+                </div>
+                <button
+                  onClick={handleCleanup}
+                  disabled={cleanupLoading || cleanupStats.oldDisponibilitaCount === 0}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {cleanupLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Eliminazione...</span>
+                    </>
+                  ) : (
+                    <>
+                      <TrashIcon className="h-4 w-4" />
+                      <span>Cleanup</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Sistema */}
         {user?.ruolo === "admin" && (
           <div className="bg-white shadow-lg rounded-lg p-6">
@@ -242,22 +349,22 @@ const Impostazioni = () => {
                   
                   // Validazione
                   if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
-                    toast.error("Tutti i campi sono obbligatori");
+                    toastError("Tutti i campi sono obbligatori");
                     return;
                   }
 
                   if (passwordData.newPassword.length < 6) {
-                    toast.error("La nuova password deve essere di almeno 6 caratteri");
+                    toastError("La nuova password deve essere di almeno 6 caratteri");
                     return;
                   }
 
                   if (passwordData.newPassword !== passwordData.confirmPassword) {
-                    toast.error("Le password non corrispondono");
+                    toastError("Le password non corrispondono");
                     return;
                   }
 
                   if (passwordData.currentPassword === passwordData.newPassword) {
-                    toast.error("La nuova password deve essere diversa dalla password corrente");
+                    toastError("La nuova password deve essere diversa dalla password corrente");
                     return;
                   }
 
@@ -268,7 +375,7 @@ const Impostazioni = () => {
                       newPassword: passwordData.newPassword,
                     });
 
-                    toast.success("Password cambiata con successo!");
+                    toastSuccess("Password cambiata con successo!");
                     setShowPasswordModal(false);
                     setPasswordData({
                       currentPassword: "",
@@ -277,7 +384,7 @@ const Impostazioni = () => {
                     });
                   } catch (error) {
                     console.error("Errore nel cambio password:", error);
-                    toast.error(
+                    toastError(
                       error.response?.data?.message || "Errore durante il cambio password"
                     );
                   } finally {

@@ -1,12 +1,12 @@
-# 🧹 Guida: Pulizia Periodica delle Disponibilità
+# 🧹 Guida: Pulizia Manuale delle Disponibilità
 
 ## Obiettivo
 
-Rimuovere automaticamente le disponibilità ormai inutili (es. mesi già trascorsi) per mantenere il database snello e il front-end veloce.
+Rimuovere manualmente le disponibilità ormai inutili (es. mesi già trascorsi) per mantenere il database snello e il front-end veloce.
 
 ## Script Disponibile
 
-Lo script è già configurato e disponibile in `server/scripts/cleanup-disponibilita.js`.
+Lo script è disponibile in `server/scripts/cleanup-disponibilita.js` per esecuzione manuale.
 
 ### Modalità di esecuzione
 
@@ -14,18 +14,18 @@ Lo script è già configurato e disponibile in `server/scripts/cleanup-disponibi
 |---------|---------|
 | `node server/scripts/cleanup-disponibilita.js` | Cancella disponibilità più vecchie di 120 giorni (default) |
 | `node server/scripts/cleanup-disponibilita.js --days=90` | Cancella quelle più vecchie di 90 giorni |
-| `npm run cleanup:disponibilita` | **Consigliato**: cancella tutto ciò che ha data precedente al primo giorno del mese corrente (elimina i mesi antecedenti) |
+| `node server/scripts/cleanup-disponibilita.js --before-current-month` | Cancella tutto ciò che ha data precedente al primo giorno del mese corrente (elimina i mesi antecedenti) |
 
-## Test Locale
+## Esecuzione Manuale
 
-Prima di schedulare, prova in locale:
+Esegui lo script manualmente quando necessario:
 
 ```bash
 # Assicurati di avere le variabili d'ambiente configurate
 # (DATABASE_URL o DB_HOST, DB_PORT, ecc.)
 
 # Esegui la pulizia "mesi precedenti" (consigliata)
-npm run cleanup:disponibilita
+node server/scripts/cleanup-disponibilita.js --before-current-month
 
 # Oppure con giorni personalizzati
 node server/scripts/cleanup-disponibilita.js --days=60
@@ -39,74 +39,11 @@ node server/scripts/cleanup-disponibilita.js --days=60
 ✅ Completato: 42 record eliminati.
 ```
 
-## Automazione su Railway
-
-Railway supporta **Cron Jobs** per eseguire comandi periodici.
-
-### Configurazione Cron Job su Railway
-
-1. Vai su **Railway Dashboard** → Il tuo progetto → **Settings**
-2. Sezione **Cron Jobs** (o **Jobs**)
-3. Crea un nuovo job con:
-   - **Name**: `cleanup-disponibilita`
-   - **Schedule**: `0 0 1 * *` (primo giorno del mese, ore 00:00)
-   - **Command**: `npm run cleanup:disponibilita`
-   - **Service**: Seleziona il servizio backend
-
-### Spiegazione Schedule
-
-- `0 0 1 * *` = ogni mese, giorno 1, ore 00:00
-  - Prima cifra: minuti (0)
-  - Seconda cifra: ore (0)
-  - Terza cifra: giorno del mese (1)
-  - Quarta cifra: mese (* = tutti)
-  - Quinta cifra: giorno della settimana (* = tutti)
-
-**Nota**: Railway potrebbe non supportare direttamente "ogni 40 giorni". La frequenza mensile è comunque adeguata per mantenere il database pulito.
-
-## Alternative
-
-### GitHub Actions
-
-Crea `.github/workflows/cleanup.yml`:
-
-```yaml
-name: Cleanup Disponibilità
-
-on:
-  schedule:
-    - cron: '0 0 1 * *'  # Primo giorno del mese
-
-jobs:
-  cleanup:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '20'
-      - name: Esegui cleanup
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          cd server
-          npm install
-          npm run cleanup:disponibilita
-```
-
-### Cron Linux locale
-
-Aggiungi a `crontab -e`:
-
-```bash
-0 0 1 * * cd /percorso/progetto/server && npm run cleanup:disponibilita
-```
-
 ## Verifica
 
 Dopo ogni esecuzione controlla:
 
-1. **Log del job** (Railway → Logs) per messaggi di successo
+1. **Output dello script** per vedere quanti record sono stati eliminati
 2. **Conteggio record** nel database:
    ```sql
    SELECT COUNT(*) FROM disponibilita;
@@ -115,11 +52,9 @@ Dopo ogni esecuzione controlla:
 
 ## Best Practices
 
-✅ **Prima esecuzione manuale**: quando attivi il job, esegui manualmente `npm run cleanup:disponibilita` per pulire il database iniziale
-
-✅ **Monitoraggio**: imposta notifiche (Railway, Slack) per job falliti
-
 ✅ **Backup preventivo**: se vuoi conservare un archivio, esporta le disponibilità vecchie prima di eliminarle
+
+✅ **Esecuzione periodica**: considera di eseguire lo script manualmente ogni mese o quando necessario
 
 ⚠️ **Limita inserimenti futuri**: considera di aggiungere nel backend un controllo che impedisca di inserire disponibilità troppo lontane (es. > 3 mesi avanti)
 
@@ -129,13 +64,10 @@ Dopo ogni esecuzione controlla:
 # Pulizia manuale (default 120 giorni)
 node server/scripts/cleanup-disponibilita.js
 
-# Pulizia mesi precedenti (suggerita) – equivalente allo script npm
-npm run cleanup:disponibilita
-
-# oppure
+# Pulizia mesi precedenti (suggerita)
 node server/scripts/cleanup-disponibilita.js --before-current-month
 
-# Personalizzata
+# Personalizzata (es. 90 giorni)
 node server/scripts/cleanup-disponibilita.js --days=90
 ```
 

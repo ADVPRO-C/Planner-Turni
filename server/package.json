@@ -10,8 +10,7 @@
     "migrate:supabase-to-railway": "node scripts/migrate-supabase-to-railway.js",
     "migrate:via-rest-api": "node scripts/migrate-via-rest-api.js",
     "migrate:localhost-to-railway": "node scripts/migrate-localhost-to-railway.js",
-    "init:railway-db": "node scripts/init-railway-db.js",
-    "cleanup:disponibilita": "node scripts/cleanup-disponibilita.js --before-current-month"
+    "init:railway-db": "node scripts/init-railway-db.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.78.0",
