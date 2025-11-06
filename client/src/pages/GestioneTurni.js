@@ -871,9 +871,15 @@ const Autocompilazione = () => {
         }
       });
 
-      const removalErrors = removalResults.filter(
-        (result) => result.status === "rejected"
-      );
+      const removalErrors = removalResults
+        .filter((result) => result.status === "rejected")
+        .map((result, index) => ({
+          message:
+            result.reason?.response?.data?.message ||
+            result.reason?.message ||
+            "Operazione non riuscita",
+          info: removalOperations[index],
+        }));
 
       // Poi aggiungi le nuove assegnazioni (evitando duplicati) in modo concorrente
       const processedVolunteers = new Map(); // key -> Set(volontario_id)
@@ -962,38 +968,36 @@ const Autocompilazione = () => {
         }
       }
 
-      const assignmentResults = await Promise.allSettled(
-        assignmentPayloads.map(({ payload }) => api.post("/turni/assegna", payload))
-      );
-
-      assignmentResults.forEach((result, index) => {
-        const debug = assignmentPayloads[index]?.debug;
-
-        if (result.status === "rejected") {
+      const assignmentErrors = [];
+      for (const { payload, debug } of assignmentPayloads) {
+        try {
+          await api.post("/turni/assegna", payload);
+          if (debug) {
+            console.log(
+              `✅ Volontario ${debug.volontarioId} assegnato a slot ${debug.slotOrarioId}/${debug.postazioneId} per il ${debug.dataTurno}`
+            );
+          }
+        } catch (error) {
+          assignmentErrors.push({ error, debug });
           console.error("❌ Errore assegnazione volontario:", {
             ...debug,
-            error: result.reason?.message,
-            response: result.reason?.response?.data,
-            status: result.reason?.response?.status,
+            error: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
           });
-        } else if (debug) {
-          console.log(
-            `✅ Volontario ${debug.volontarioId} assegnato a slot ${debug.slotOrarioId}/${debug.postazioneId} per il ${debug.dataTurno}`
-          );
         }
-      });
-
-      const assignmentErrors = assignmentResults.filter(
-        (result) => result.status === "rejected"
-      );
+      }
 
       if (removalErrors.length > 0 || assignmentErrors.length > 0) {
-        const combinedErrors = [...removalErrors, ...assignmentErrors].map(
-          (result) =>
-            result.reason?.response?.data?.message ||
-            result.reason?.message ||
-            "Operazione non riuscita"
-        );
+        const combinedErrors = [
+          ...removalErrors.map((err) => err.message),
+          ...assignmentErrors.map(
+            ({ error }) =>
+              error.response?.data?.message ||
+              error.message ||
+              "Operazione non riuscita"
+          ),
+        ];
 
         throw new Error(
           combinedErrors.length === 1
