@@ -283,7 +283,8 @@ const Autocompilazione = () => {
     date,
     slotOrarioId,
     postazioneId,
-    sourceData = data
+    sourceData = data,
+    pendingMap = pendingAssignments
   ) => {
     const existingAssignments = getExistingAssignments(
       date,
@@ -294,7 +295,7 @@ const Autocompilazione = () => {
 
     // Controlla anche le assegnazioni in sospeso
     const key = `${date}-${slotOrarioId}-${postazioneId}`;
-    const pendingAssignmentsForSlot = pendingAssignments.get(key) || [];
+    const pendingAssignmentsForSlot = pendingMap.get(key) || [];
 
     // Trova i dati dei volontari in sospeso dalle disponibilità
     const pendingVolunteers = pendingAssignmentsForSlot
@@ -395,7 +396,7 @@ const Autocompilazione = () => {
   };
 
   // Calcola i contatori dinamici per un volontario specifico
-  const getContatoriDinamici = (volontarioId) => {
+  const getContatoriDinamici = (volontarioId, pendingMap = pendingAssignments) => {
     const contatori = contatoriMensili[volontarioId] || {
       disponibilita_totali: 0,
       assegnazioni_totali: 0,
@@ -404,7 +405,7 @@ const Autocompilazione = () => {
     // Calcola le assegnazioni in sospeso per questo volontario nel mese corrente
     let assegnazioniInSospeso = 0;
 
-    pendingAssignments.forEach((assignments, _key) => {
+    pendingMap.forEach((assignments, _key) => {
       assignments.forEach((assignment) => {
         if (assignment.volontario_id === parseInt(volontarioId)) {
           // Verifica che l'assegnazione sia nel range di date corrente
@@ -563,7 +564,8 @@ const Autocompilazione = () => {
     date,
     slotOrarioId,
     postazioneId,
-    sourceData = data
+    sourceData = data,
+    pendingMap = pendingAssignments
   ) => {
     // Controlla nelle assegnazioni esistenti
     const existingAssignments = getExistingAssignments(
@@ -578,7 +580,7 @@ const Autocompilazione = () => {
 
     // Controlla nelle assegnazioni pending
     const key = `${date}-${slotOrarioId}-${postazioneId}`;
-    const pendingAssignmentsForSlot = pendingAssignments.get(key) || [];
+    const pendingAssignmentsForSlot = pendingMap.get(key) || [];
     const normalizedSlotId = normalizeId(slotOrarioId);
 
     for (const pending of pendingAssignmentsForSlot) {
@@ -1070,7 +1072,10 @@ const Autocompilazione = () => {
   };
 
   // Calcola la data dell'ultima assegnazione per ogni volontario
-  const getLastAssignmentDate = (volontarioId) => {
+  const getLastAssignmentDate = (
+    volontarioId,
+    pendingMap = pendingAssignments
+  ) => {
     // Cerca nelle assegnazioni esistenti nel database
     const existingAssignments =
       data?.assegnazioni?.filter(
@@ -1079,7 +1084,7 @@ const Autocompilazione = () => {
 
     // Cerca nelle assegnazioni in sospeso
     const pendingAssignmentsForVolunteer = [];
-    pendingAssignments.forEach((assignments) => {
+    pendingMap.forEach((assignments) => {
       const assignmentsForVolunteer = assignments.filter(
         (a) => a.volontario_id === parseInt(volontarioId)
       );
@@ -1107,17 +1112,26 @@ const Autocompilazione = () => {
   };
 
   // Ordina i volontari per data dell'ultima assegnazione (più vecchia = priorità alta)
-  const sortVolunteersByLastAssignment = (volunteers) => {
+  const sortVolunteersByLastAssignment = (
+    volunteers,
+    pendingMap = pendingAssignments
+  ) => {
     return volunteers.sort((a, b) => {
-      const contatoriA = getContatoriDinamici(a.volontario_id);
-      const contatoriB = getContatoriDinamici(b.volontario_id);
+      const contatoriA = getContatoriDinamici(a.volontario_id, pendingMap);
+      const contatoriB = getContatoriDinamici(b.volontario_id, pendingMap);
 
       if (contatoriA.assegnazioni_totali !== contatoriB.assegnazioni_totali) {
         return contatoriA.assegnazioni_totali - contatoriB.assegnazioni_totali;
       }
 
-      const lastAssignmentA = getLastAssignmentDate(a.volontario_id);
-      const lastAssignmentB = getLastAssignmentDate(b.volontario_id);
+      const lastAssignmentA = getLastAssignmentDate(
+        a.volontario_id,
+        pendingMap
+      );
+      const lastAssignmentB = getLastAssignmentDate(
+        b.volontario_id,
+        pendingMap
+      );
       const lastAssignmentDiff = lastAssignmentA - lastAssignmentB;
       if (lastAssignmentDiff !== 0) {
         return lastAssignmentDiff;
@@ -1187,7 +1201,8 @@ const Autocompilazione = () => {
                 date,
                 slot.id,
                 postazione.id,
-                currentData
+                currentData,
+                newPendingAssignments
               );
 
               // Ottieni anche le assegnazioni in sospeso per questo slot
@@ -1280,7 +1295,8 @@ const Autocompilazione = () => {
                 slot.orario_inizio,
                 slot.orario_fine,
                 slot.id,
-                currentData
+                currentData,
+                newPendingAssignments
               );
 
               console.log(
@@ -1319,20 +1335,23 @@ const Autocompilazione = () => {
                 date,
                 slot.id,
                 postazione.id,
-                currentData
+                currentData,
+                newPendingAssignments
               );
               console.log(`🔍 Serve un uomo? ${needsMale}`);
 
               if (needsMale) {
                 // Prima cerca un uomo disponibile con l'ultima assegnazione più vecchia
-                const availableMen = availableForAssignment.filter(
-                  (v) => v.sesso === "M"
-                );
+                  const availableMen = availableForAssignment.filter(
+                    (v) => v.sesso === "M"
+                  );
 
                 if (availableMen.length > 0) {
                   // Ordina gli uomini per data dell'ultima assegnazione
-                  const sortedMen =
-                    sortVolunteersByLastAssignment(availableMen);
+                  const sortedMen = sortVolunteersByLastAssignment(
+                    availableMen,
+                    newPendingAssignments
+                  );
                   const selectedMan = sortedMen[0];
 
                   volunteersToAssign.push(selectedMan);
@@ -1353,8 +1372,10 @@ const Autocompilazione = () => {
                   const additionalNeeded = volunteersNeeded - 1;
                   if (additionalNeeded > 0 && remainingAvailable.length > 0) {
                     // Ordina i rimanenti per data dell'ultima assegnazione
-                    const sortedRemaining =
-                      sortVolunteersByLastAssignment(remainingAvailable);
+                    const sortedRemaining = sortVolunteersByLastAssignment(
+                      remainingAvailable,
+                      newPendingAssignments
+                    );
                     const additionalVolunteers = sortedRemaining.slice(
                       0,
                       additionalNeeded
@@ -1382,7 +1403,8 @@ const Autocompilazione = () => {
               } else {
                 // Non serve un uomo, assegna chi vuoi con distribuzione intelligente
                 const sortedVolunteers = sortVolunteersByLastAssignment(
-                  availableForAssignment
+                  availableForAssignment,
+                  newPendingAssignments
                 );
                 const selectedVolunteers = sortedVolunteers.slice(
                   0,
