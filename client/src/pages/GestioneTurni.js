@@ -1109,9 +1109,26 @@ const Autocompilazione = () => {
   // Ordina i volontari per data dell'ultima assegnazione (più vecchia = priorità alta)
   const sortVolunteersByLastAssignment = (volunteers) => {
     return volunteers.sort((a, b) => {
+      const contatoriA = getContatoriDinamici(a.volontario_id);
+      const contatoriB = getContatoriDinamici(b.volontario_id);
+
+      if (contatoriA.assegnazioni_totali !== contatoriB.assegnazioni_totali) {
+        return contatoriA.assegnazioni_totali - contatoriB.assegnazioni_totali;
+      }
+
       const lastAssignmentA = getLastAssignmentDate(a.volontario_id);
       const lastAssignmentB = getLastAssignmentDate(b.volontario_id);
-      return lastAssignmentA - lastAssignmentB; // Ordine crescente (più vecchia prima)
+      const lastAssignmentDiff = lastAssignmentA - lastAssignmentB;
+      if (lastAssignmentDiff !== 0) {
+        return lastAssignmentDiff;
+      }
+
+      const cognomeCompare = (a.cognome || "").localeCompare(b.cognome || "");
+      if (cognomeCompare !== 0) {
+        return cognomeCompare;
+      }
+
+      return (a.nome || "").localeCompare(b.nome || "");
     });
   };
 
