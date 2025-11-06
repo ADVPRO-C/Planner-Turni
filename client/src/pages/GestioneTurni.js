@@ -85,6 +85,20 @@ const Autocompilazione = () => {
     return Number.isNaN(parsed) ? null : parsed;
   };
 
+  const getTodayISO = () => {
+    return new Date().toISOString().split("T")[0];
+  };
+
+  const isDateInPast = (dateString) => {
+    if (!dateString) return false;
+    try {
+      const today = getTodayISO();
+      return dateString < today;
+    } catch (_error) {
+      return false;
+    }
+  };
+
   // Carica gli slot lasciati vuoti manualmente dal localStorage
   const loadManuallyEmptiedSlots = (year, month) => {
     try {
@@ -1145,6 +1159,9 @@ const Autocompilazione = () => {
         console.log(`🔍 Autocompilazione per postazione: ${postazione.luogo}`);
 
         currentData?.dateRange?.forEach((date) => {
+          if (isDateInPast(date)) {
+            return;
+          }
           if (!isPostazioneActiveForDate(postazione, date)) return;
 
           postazione.slot_orari?.forEach((slot) => {
@@ -1625,6 +1642,9 @@ const Autocompilazione = () => {
         if (postazioneId && postazione.id !== postazioneId) return;
 
         data?.dateRange?.forEach((date) => {
+          if (isDateInPast(date)) {
+            return;
+          }
           if (!isPostazioneActiveForDate(postazione, date)) return;
 
           postazione.slot_orari?.forEach((slot) => {
