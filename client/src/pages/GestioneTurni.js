@@ -265,11 +265,17 @@ const Autocompilazione = () => {
 
   // Trova i volontari disponibili per una data e slot orario specifici
   // Verifica se è necessario un uomo in una postazione
-  const needsMaleVolunteer = (date, slotOrarioId, postazioneId) => {
+  const needsMaleVolunteer = (
+    date,
+    slotOrarioId,
+    postazioneId,
+    sourceData = data
+  ) => {
     const existingAssignments = getExistingAssignments(
       date,
       slotOrarioId,
-      postazioneId
+      postazioneId,
+      sourceData
     );
 
     // Controlla anche le assegnazioni in sospeso
@@ -283,7 +289,7 @@ const Autocompilazione = () => {
         if (volunteerId === null) {
           return null;
         }
-        const volunteerData = data?.disponibilita?.find((d) => {
+        const volunteerData = sourceData?.disponibilita?.find((d) => {
           return normalizeId(d.volontario_id) === volunteerId;
         });
         return volunteerData;
@@ -319,9 +325,10 @@ const Autocompilazione = () => {
     date,
     orarioInizio,
     orarioFine,
-    slotOrarioId
+    slotOrarioId,
+    sourceData = data
   ) => {
-    if (!data?.disponibilita) return [];
+    if (!sourceData?.disponibilita) return [];
 
     console.log("🔍 Cercando disponibilità per:", {
       date,
@@ -333,7 +340,7 @@ const Autocompilazione = () => {
 
     const targetSlotId = normalizeId(slotOrarioId);
 
-    const filtered = data.disponibilita.filter((d) => {
+    const filtered = sourceData.disponibilita.filter((d) => {
       // Gestisci correttamente le date senza problemi di timezone
       let disponibilitaDate;
       if (typeof d.data === "string") {
@@ -438,14 +445,19 @@ const Autocompilazione = () => {
 
   // Trova le assegnazioni esistenti per una data, orario e postazione specifici
   // Trova le assegnazioni esistenti per una data e slot orario specifici (incluse modifiche in sospeso)
-  const getExistingAssignments = (date, slotOrarioId, postazioneId) => {
-    if (!data?.assegnazioni) return [];
+  const getExistingAssignments = (
+    date,
+    slotOrarioId,
+    postazioneId,
+    sourceData = data
+  ) => {
+    if (!sourceData?.assegnazioni) return [];
 
     // Assegnazioni dal database
     const slotId = normalizeId(slotOrarioId);
     const postId = normalizeId(postazioneId);
 
-    let assignments = data.assegnazioni.filter((a) => {
+    let assignments = sourceData.assegnazioni.filter((a) => {
       // Gestisci correttamente le date senza problemi di timezone
       let assegnazioneDate;
       if (typeof a.data_turno === "string") {
@@ -533,12 +545,18 @@ const Autocompilazione = () => {
   };
 
   // Verifica se c'è almeno un uomo nelle assegnazioni (esistenti + pending)
-  const hasManInSlot = (date, slotOrarioId, postazioneId) => {
+  const hasManInSlot = (
+    date,
+    slotOrarioId,
+    postazioneId,
+    sourceData = data
+  ) => {
     // Controlla nelle assegnazioni esistenti
     const existingAssignments = getExistingAssignments(
       date,
       slotOrarioId,
-      postazioneId
+      postazioneId,
+      sourceData
     );
     const hasManInExisting = existingAssignments.some((a) => a.sesso === "M");
 
@@ -555,7 +573,7 @@ const Autocompilazione = () => {
         continue;
       }
       // Cerca il sesso del volontario nelle disponibilità
-      const volunteerData = data?.disponibilita?.find((d) => {
+      const volunteerData = sourceData?.disponibilita?.find((d) => {
         return (
           normalizeId(d.volontario_id) === volunteerId &&
           d.data === date &&
@@ -1083,18 +1101,36 @@ const Autocompilazione = () => {
         postazioneNome || "tutte le postazioni"
       );
 
+      // Aggiorna i dati prima di procedere per evitare assegnazioni con disponibilità obsolete
+      let currentData = data;
+      try {
+        const latestDataResponse = await api.get(
+          `/turni/gestione/${selectedDateRange.inizio}/${selectedDateRange.fine}`
+        );
+        currentData = latestDataResponse.data;
+        setData(latestDataResponse.data);
+      } catch (refreshError) {
+        console.warn(
+          "⚠️ Impossibile aggiornare i dati prima dell'autocompilazione, si utilizzano quelli in cache",
+          refreshError
+        );
+        toastInfo(
+          "Non è stato possibile aggiornare le disponibilità dal server. Vengono usati i dati in cache."
+        );
+      }
+
       // NON pulire le assegnazioni in sospeso esistenti - preserviamo quelle già fatte
       // Inizia con le assegnazioni in sospeso esistenti
       const newPendingAssignments = new Map(pendingAssignments);
       let totalNewAssignments = 0;
       let errors = [];
 
-      data?.postazioni?.forEach((postazione) => {
+      currentData?.postazioni?.forEach((postazione) => {
         if (postazioneId && postazione.id !== postazioneId) return;
 
         console.log(`🔍 Autocompilazione per postazione: ${postazione.luogo}`);
 
-        data?.dateRange?.forEach((date) => {
+        currentData?.dateRange?.forEach((date) => {
           if (!isPostazioneActiveForDate(postazione, date)) return;
 
           postazione.slot_orari?.forEach((slot) => {
@@ -1102,7 +1138,8 @@ const Autocompilazione = () => {
               const existingAssignments = getExistingAssignments(
                 date,
                 slot.id,
-                postazione.id
+                postazione.id,
+                currentData
               );
 
               // Ottieni anche le assegnazioni in sospeso per questo slot
@@ -1137,7 +1174,7 @@ const Autocompilazione = () => {
                   return true;
                 }
 
-                const assignmentForSlot = data?.assegnazioni?.find((a) => {
+                const assignmentForSlot = currentData?.assegnazioni?.find((a) => {
                   let assegnazioneDate;
                   if (typeof a.data_turno === "string") {
                     assegnazioneDate = a.data_turno.split("T")[0];
@@ -1194,7 +1231,8 @@ const Autocompilazione = () => {
                 date,
                 slot.orario_inizio,
                 slot.orario_fine,
-                slot.id
+                slot.id,
+                currentData
               );
 
               console.log(
@@ -1232,7 +1270,8 @@ const Autocompilazione = () => {
               const needsMale = needsMaleVolunteer(
                 date,
                 slot.id,
-                postazione.id
+                postazione.id,
+                currentData
               );
               console.log(`🔍 Serve un uomo? ${needsMale}`);
 
@@ -1314,6 +1353,14 @@ const Autocompilazione = () => {
                         ).toLocaleDateString()})`
                     )
                     .join(", ")}`
+                );
+              }
+
+              if (volunteersToAssign.length < volunteersNeeded) {
+                const missingVolunteers =
+                  volunteersNeeded - volunteersToAssign.length;
+                errors.push(
+                  `⚠️ Disponibilità insufficienti (${missingVolunteers} posti liberi) per ${date} ${slot.orario_inizio}-${slot.orario_fine} - ${postazione.luogo}`
                 );
               }
 
