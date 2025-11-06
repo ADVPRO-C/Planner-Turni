@@ -67,6 +67,7 @@ const Autocompilazione = () => {
 
   // Stati per autocompilazione
   const [compiling, setCompiling] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Stati per gestione draft locale
   const [pendingAssignments, setPendingAssignments] = useState(new Map()); // Modifiche in sospeso
@@ -751,78 +752,118 @@ const Autocompilazione = () => {
 
   // Salva tutte le modifiche in sospeso al database
   const savePendingChanges = async () => {
+    if (saving) {
+      return;
+    }
+
+    if (pendingAssignments.size === 0 && pendingRemovals.size === 0) {
+      toastInfo("Non ci sono modifiche da salvare");
+      return;
+    }
+
+    setSaving(true);
+
     try {
       console.log("💾 Salvando modifiche in sospeso...");
       console.log("📝 Assegnazioni in sospeso:", pendingAssignments);
       console.log("🗑️ Rimozioni in sospeso:", pendingRemovals);
 
-      // Prima rimuovi le rimozioni in sospeso
-      for (const [assegnazioneId, volontariSet] of pendingRemovals) {
-        for (const volontarioId of volontariSet) {
-          console.log(
-            `🗑️ Rimuovendo volontario ${volontarioId} da assegnazione ${assegnazioneId}`
-          );
-
-          try {
-            const assegnazioneIdNum = parseInt(assegnazioneId, 10);
-            const volontarioIdNum = parseInt(volontarioId, 10);
-
-            if (
-              Number.isNaN(assegnazioneIdNum) ||
-              Number.isNaN(volontarioIdNum)
-            ) {
-              console.error(
-                `❌ ID non validi: assegnazioneId=${assegnazioneId}, volontarioId=${volontarioId}`
-              );
-              continue;
-            }
-
-            await api.delete(
-              `/turni/assegnazione/${assegnazioneIdNum}/volontario/${volontarioIdNum}`
-            );
-            console.log(
-              `✅ Volontario ${volontarioIdNum} rimosso con successo`
-            );
-          } catch (error) {
-            console.error("❌ Errore rimozione:", {
-              error: error.message,
-              response: error.response?.data,
-              status: error.response?.status,
-              assegnazioneId,
-              volontarioId,
-            });
-            console.warn(
-              `⚠️ Rimozione fallita per ${assegnazioneId}/${volontarioId}, continuando...`
-            );
-          }
+      // Prima rimuovi le rimozioni in sospeso in parallelo
+      const removalOperations = [];
+      pendingRemovals.forEach((volontariSet, assegnazioneId) => {
+        if (!volontariSet || volontariSet.size === 0) {
+          return;
         }
-      }
 
-      // Poi aggiungi le nuove assegnazioni
-      // Traccia i volontari già processati per evitare duplicati nello stesso slot
+        const assegnazioneIdNum = parseInt(assegnazioneId, 10);
+        if (Number.isNaN(assegnazioneIdNum)) {
+          console.error(
+            `❌ ID assegnazione non valido durante la rimozione: ${assegnazioneId}`
+          );
+          return;
+        }
+
+        volontariSet.forEach((volontarioId) => {
+          const volontarioIdNum = parseInt(volontarioId, 10);
+          if (Number.isNaN(volontarioIdNum)) {
+            console.error(
+              `❌ ID volontario non valido durante la rimozione: ${volontarioId}`
+            );
+            return;
+          }
+
+          removalOperations.push({
+            assegnazioneId: assegnazioneIdNum,
+            volontarioId: volontarioIdNum,
+          });
+        });
+      });
+
+      const removalResults = await Promise.allSettled(
+        removalOperations.map(({ assegnazioneId, volontarioId }) =>
+          api
+            .delete(
+              `/turni/assegnazione/${assegnazioneId}/volontario/${volontarioId}`
+            )
+            .then(() => ({ assegnazioneId, volontarioId }))
+        )
+      );
+
+      removalResults.forEach((result, index) => {
+        const info = removalOperations[index];
+        if (!info) {
+          return;
+        }
+
+        if (result.status === "rejected") {
+          console.error("❌ Errore rimozione:", {
+            assegnazioneId: info.assegnazioneId,
+            volontarioId: info.volontarioId,
+            error: result.reason?.message,
+            response: result.reason?.response?.data,
+            status: result.reason?.response?.status,
+          });
+        } else {
+          console.log(
+            `✅ Volontario ${info.volontarioId} rimosso da assegnazione ${info.assegnazioneId}`
+          );
+        }
+      });
+
+      const removalErrors = removalResults.filter(
+        (result) => result.status === "rejected"
+      );
+
+      // Poi aggiungi le nuove assegnazioni (evitando duplicati) in modo concorrente
       const processedVolunteers = new Map(); // key -> Set(volontario_id)
+      const assignmentPayloads = [];
 
       for (const [key, assignments] of pendingAssignments) {
         console.log(`📝 Processando assegnazioni per ${key}:`, assignments);
 
-        // Inizializza il set per questo slot se non esiste
         if (!processedVolunteers.has(key)) {
           processedVolunteers.set(key, new Set());
         }
         const processedForSlot = processedVolunteers.get(key);
 
         for (const assignment of assignments) {
-          const volontarioId = parseInt(assignment.volontario_id);
+          const volontarioId = parseInt(assignment.volontario_id, 10);
 
-          // Verifica se questo volontario è già stato processato per questo slot
-          if (processedForSlot.has(volontarioId)) {
+          if (Number.isNaN(volontarioId)) {
             console.warn(
-              `⚠️ Volontario ${volontarioId} già in coda per questo slot, saltando...`
+              `⚠️ Volontario con ID non valido per lo slot ${key}, salto`,
+              assignment
             );
             continue;
           }
 
-          // Verifica se il volontario è già assegnato nel database
+          if (processedForSlot.has(volontarioId)) {
+            console.warn(
+              `⚠️ Volontario ${volontarioId} già in coda per questo slot, salto`
+            );
+            continue;
+          }
+
           const existingAssignments = getExistingAssignments(
             assignment.data_turno,
             assignment.slot_orario_id,
@@ -835,13 +876,12 @@ const Autocompilazione = () => {
 
           if (isAlreadyAssigned) {
             console.warn(
-              `⚠️ Volontario ${volontarioId} già assegnato nel database, saltando...`
+              `⚠️ Volontario ${volontarioId} già assegnato nel database, salto`
             );
             processedForSlot.add(volontarioId);
-            continue; // Salta questa assegnazione
+            continue;
           }
 
-          // Assicurati che la data sia in formato ISO string
           let dataTurno = assignment.data_turno;
           if (dataTurno instanceof Date) {
             dataTurno = dataTurno.toISOString().split("T")[0];
@@ -849,46 +889,76 @@ const Autocompilazione = () => {
             dataTurno = dataTurno.split("T")[0];
           }
 
-          const requestBody = {
+          const slotOrarioId = parseInt(assignment.slot_orario_id, 10);
+          const postazioneId = parseInt(assignment.postazione_id, 10);
+
+          if (Number.isNaN(slotOrarioId) || Number.isNaN(postazioneId)) {
+            console.warn(
+              `⚠️ Slot o postazione non validi per lo slot ${key}, salto`,
+              assignment
+            );
+            continue;
+          }
+
+          const payload = {
             data_turno: dataTurno,
-            slot_orario_id: parseInt(assignment.slot_orario_id),
-            postazione_id: parseInt(assignment.postazione_id),
+            slot_orario_id: slotOrarioId,
+            postazione_id: postazioneId,
             volontario_id: volontarioId,
           };
 
-          console.log("📤 Invio richiesta assegnazione:", requestBody);
-          console.log("🔍 Dati assegnazione originali:", {
-            data_turno: assignment.data_turno,
-            slot_orario_id: assignment.slot_orario_id,
-            postazione_id: assignment.postazione_id,
-            volontario_id: volontarioId,
+          processedForSlot.add(volontarioId);
+          assignmentPayloads.push({
+            payload,
+            debug: {
+              key,
+              volontarioId,
+              slotOrarioId,
+              postazioneId,
+              dataTurno,
+            },
           });
-
-          try {
-            const response = await api.post("/turni/assegna", requestBody);
-
-            if (!response || !response.data) {
-              throw new Error("Risposta non valida dal server");
-            }
-
-            console.log(`✅ Volontario ${volontarioId} assegnato con successo`);
-
-            // Segna come processato per evitare duplicati
-            processedForSlot.add(volontarioId);
-          } catch (error) {
-            console.error(
-              `❌ Errore assegnazione volontario ${volontarioId}:`,
-              {
-                error: error.message,
-                response: error.response?.data,
-                status: error.response?.status,
-                requestBody,
-              }
-            );
-            // Non bloccare il processo, ma logga l'errore
-            throw error; // Rilancia per fermare il salvataggio se c'è un errore critico
-          }
         }
+      }
+
+      const assignmentResults = await Promise.allSettled(
+        assignmentPayloads.map(({ payload }) => api.post("/turni/assegna", payload))
+      );
+
+      assignmentResults.forEach((result, index) => {
+        const debug = assignmentPayloads[index]?.debug;
+
+        if (result.status === "rejected") {
+          console.error("❌ Errore assegnazione volontario:", {
+            ...debug,
+            error: result.reason?.message,
+            response: result.reason?.response?.data,
+            status: result.reason?.response?.status,
+          });
+        } else if (debug) {
+          console.log(
+            `✅ Volontario ${debug.volontarioId} assegnato a slot ${debug.slotOrarioId}/${debug.postazioneId} per il ${debug.dataTurno}`
+          );
+        }
+      });
+
+      const assignmentErrors = assignmentResults.filter(
+        (result) => result.status === "rejected"
+      );
+
+      if (removalErrors.length > 0 || assignmentErrors.length > 0) {
+        const combinedErrors = [...removalErrors, ...assignmentErrors].map(
+          (result) =>
+            result.reason?.response?.data?.message ||
+            result.reason?.message ||
+            "Operazione non riuscita"
+        );
+
+        throw new Error(
+          combinedErrors.length === 1
+            ? combinedErrors[0]
+            : `${combinedErrors.length} operazioni non sono state completate`
+        );
       }
 
       // Salva gli slot lasciati vuoti manualmente PRIMA di pulire pendingRemovals
@@ -925,6 +995,8 @@ const Autocompilazione = () => {
         error.message ||
         "Errore nel salvataggio delle modifiche";
       toastError(errorMessage);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -2254,6 +2326,17 @@ const Autocompilazione = () => {
         </div>
       )}
 
+      {saving && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg px-6 py-4 shadow-lg flex items-center space-x-3">
+            <span className="h-5 w-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium text-gray-700">
+              Salvataggio delle modifiche in corso...
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
           Gestione Turni - Vista Mensile
@@ -2416,7 +2499,7 @@ const Autocompilazione = () => {
         <div className="flex space-x-2 mt-4">
           <button
             onClick={() => openExportModal()}
-            disabled={exporting}
+            disabled={exporting || saving}
             className="btn-primary flex items-center"
             title={`Esporta tabella per tutte le postazioni nel mese ${getMonthName(
               selectedMonth.year,
@@ -2473,7 +2556,7 @@ const Autocompilazione = () => {
                       onClick={() =>
                         executeAutocompilazione(postazione.id, postazione.luogo)
                       }
-                      disabled={compiling}
+                      disabled={compiling || saving}
                       className="btn-secondary flex items-center"
                       title={`Esegui autocompilazione automatica per "${
                         postazione.luogo
@@ -2493,7 +2576,7 @@ const Autocompilazione = () => {
                       onClick={() =>
                         handleReset(postazione.id, postazione.luogo)
                       }
-                      disabled={compiling}
+                      disabled={compiling || saving}
                       className="btn-danger flex items-center"
                       title={`Elimina tutte le assegnazioni di "${
                         postazione.luogo
@@ -2511,7 +2594,7 @@ const Autocompilazione = () => {
                       onClick={() =>
                         openExportModal(postazione.id, postazione.luogo)
                       }
-                      disabled={exporting}
+                      disabled={exporting || saving}
                       className="btn-secondary flex items-center"
                       title={`Esporta tabella per "${
                         postazione.luogo
@@ -2528,24 +2611,34 @@ const Autocompilazione = () => {
                     {(pendingAssignments.size > 0 ||
                       pendingRemovals.size > 0) && (
                       <button
-                        onClick={() => savePendingChanges()}
+                        onClick={savePendingChanges}
+                        disabled={saving || compiling}
                         className="btn-primary flex items-center"
                         title="Salva tutte le modifiche in sospeso"
                       >
-                        <svg
-                          className="h-4 w-4 mr-2"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                        Salva Modifiche
+                        {saving ? (
+                          <>
+                            <span className="h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Salvataggio...
+                          </>
+                        ) : (
+                          <>
+                            <svg
+                              className="h-4 w-4 mr-2"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                            Salva Modifiche
+                          </>
+                        )}
                       </button>
                     )}
                   </div>
@@ -2667,7 +2760,7 @@ const Autocompilazione = () => {
             <div className="space-y-3">
               <button
                 onClick={() => handleExport("pdf")}
-                disabled={exporting}
+                disabled={exporting || saving}
                 className="w-full flex items-center justify-center px-4 py-3 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
               >
                 <svg
@@ -2686,7 +2779,7 @@ const Autocompilazione = () => {
 
               <button
                 onClick={() => handleExport("excel")}
-                disabled={exporting}
+                disabled={exporting || saving}
                 className="w-full flex items-center justify-center px-4 py-3 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
               >
                 <svg
