@@ -77,6 +77,14 @@ const Autocompilazione = () => {
   // Stato per tooltip nomi troncati
   const [tooltip, setTooltip] = useState({ show: false, text: "", x: 0, y: 0 });
 
+  const normalizeId = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "number") return value;
+    if (typeof value === "string" && value.trim() === "") return null;
+    const parsed = parseInt(value, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+
   // Carica gli slot lasciati vuoti manualmente dal localStorage
   const loadManuallyEmptiedSlots = (year, month) => {
     try {
@@ -271,9 +279,13 @@ const Autocompilazione = () => {
     // Trova i dati dei volontari in sospeso dalle disponibilità
     const pendingVolunteers = pendingAssignmentsForSlot
       .map((pending) => {
-        const volunteerData = data?.disponibilita?.find(
-          (d) => d.volontario_id === parseInt(pending.volontario_id)
-        );
+        const volunteerId = normalizeId(pending.volontario_id);
+        if (volunteerId === null) {
+          return null;
+        }
+        const volunteerData = data?.disponibilita?.find((d) => {
+          return normalizeId(d.volontario_id) === volunteerId;
+        });
         return volunteerData;
       })
       .filter(Boolean); // Rimuovi undefined
@@ -319,6 +331,8 @@ const Autocompilazione = () => {
       totalDisponibilita: data.disponibilita.length,
     });
 
+    const targetSlotId = normalizeId(slotOrarioId);
+
     const filtered = data.disponibilita.filter((d) => {
       // Gestisci correttamente le date senza problemi di timezone
       let disponibilitaDate;
@@ -332,7 +346,7 @@ const Autocompilazione = () => {
 
       const matches =
         disponibilitaDate === date &&
-        d.slot_orario_id === slotOrarioId &&
+        normalizeId(d.slot_orario_id) === targetSlotId &&
         d.disponibilita_stato === "disponibile" &&
         d.volontario_stato === "attivo";
 
@@ -428,6 +442,9 @@ const Autocompilazione = () => {
     if (!data?.assegnazioni) return [];
 
     // Assegnazioni dal database
+    const slotId = normalizeId(slotOrarioId);
+    const postId = normalizeId(postazioneId);
+
     let assignments = data.assegnazioni.filter((a) => {
       // Gestisci correttamente le date senza problemi di timezone
       let assegnazioneDate;
@@ -439,8 +456,8 @@ const Autocompilazione = () => {
 
       return (
         assegnazioneDate === date &&
-        a.slot_orario_id === slotOrarioId &&
-        a.postazione_id === postazioneId
+        normalizeId(a.slot_orario_id) === slotId &&
+        normalizeId(a.postazione_id) === postId
       );
     });
 
@@ -530,15 +547,21 @@ const Autocompilazione = () => {
     // Controlla nelle assegnazioni pending
     const key = `${date}-${slotOrarioId}-${postazioneId}`;
     const pendingAssignmentsForSlot = pendingAssignments.get(key) || [];
+    const normalizedSlotId = normalizeId(slotOrarioId);
 
     for (const pending of pendingAssignmentsForSlot) {
+      const volunteerId = normalizeId(pending.volontario_id);
+      if (volunteerId === null) {
+        continue;
+      }
       // Cerca il sesso del volontario nelle disponibilità
-      const volunteerData = data?.disponibilita?.find(
-        (d) =>
-          d.volontario_id === pending.volontario_id &&
+      const volunteerData = data?.disponibilita?.find((d) => {
+        return (
+          normalizeId(d.volontario_id) === volunteerId &&
           d.data === date &&
-          d.slot_orario_id === slotOrarioId
-      );
+          normalizeId(d.slot_orario_id) === normalizedSlotId
+        );
+      });
       if (volunteerData && volunteerData.sesso === "M") {
         return true;
       }
