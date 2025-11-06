@@ -884,6 +884,7 @@ const Autocompilazione = () => {
       // Poi aggiungi le nuove assegnazioni (evitando duplicati) in modo concorrente
       const processedVolunteers = new Map(); // key -> Set(volontario_id)
       const assignmentPayloads = [];
+      const assignmentsBySlot = new Map();
 
       for (const [key, assignments] of pendingAssignments) {
         console.log(`📝 Processando assegnazioni per ${key}:`, assignments);
@@ -955,7 +956,7 @@ const Autocompilazione = () => {
           };
 
           processedForSlot.add(volontarioId);
-          assignmentPayloads.push({
+          const payloadInfo = {
             payload,
             debug: {
               key,
@@ -964,29 +965,38 @@ const Autocompilazione = () => {
               postazioneId,
               dataTurno,
             },
-          });
+          };
+
+          assignmentPayloads.push(payloadInfo);
+
+          if (!assignmentsBySlot.has(key)) {
+            assignmentsBySlot.set(key, []);
+          }
+          assignmentsBySlot.get(key).push(payloadInfo);
         }
       }
 
       const assignmentErrors = [];
-      for (const { payload, debug } of assignmentPayloads) {
-        try {
-          await api.post("/turni/assegna", payload);
-          if (debug) {
-            console.log(
-              `✅ Volontario ${debug.volontarioId} assegnato a slot ${debug.slotOrarioId}/${debug.postazioneId} per il ${debug.dataTurno}`
-            );
+      await Promise.all(
+        Array.from(assignmentsBySlot.values()).map(async (assignments) => {
+          for (const { payload, debug } of assignments) {
+            try {
+              await api.post("/turni/assegna", payload);
+              console.log(
+                `✅ Volontario ${debug.volontarioId} assegnato a slot ${debug.slotOrarioId}/${debug.postazioneId} per il ${debug.dataTurno}`
+              );
+            } catch (error) {
+              assignmentErrors.push({ error, debug });
+              console.error("❌ Errore assegnazione volontario:", {
+                ...debug,
+                error: error.message,
+                response: error.response?.data,
+                status: error.response?.status,
+              });
+            }
           }
-        } catch (error) {
-          assignmentErrors.push({ error, debug });
-          console.error("❌ Errore assegnazione volontario:", {
-            ...debug,
-            error: error.message,
-            response: error.response?.data,
-            status: error.response?.status,
-          });
-        }
-      }
+        })
+      );
 
       if (removalErrors.length > 0 || assignmentErrors.length > 0) {
         const combinedErrors = [
